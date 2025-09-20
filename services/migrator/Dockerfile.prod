@@ -1,0 +1,10 @@
+FROM golang:1.22-alpine AS build
+WORKDIR /src
+COPY . .
+RUN go mod download && CGO_ENABLED=0 go build -o /out/backsaas-migrator ./cmd/backsaas-migrator
+
+FROM gcr.io/distroless/base-debian12
+WORKDIR /
+COPY --from=build /out/backsaas-migrator /backsaas-migrator
+USER 65532:65532
+ENTRYPOINT ["/backsaas-migrator"]

@@ -1,0 +1,155 @@
+version: 1
+service:
+  name: "test-api"
+  description: "Test schema for BackSaas API testing"
+
+# Test entities
+entities:
+  users:
+    key: id
+    schema:
+      type: object
+      required: [id, email, tenant_id]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        status: { type: string, enum: [active, inactive, pending] }
+        tenant_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "self"
+      write:
+        - role: admin
+        - rule: "self AND field IN ['name', 'updated_at']"
+      delete:
+        - role: admin
+
+  products:
+    key: id
+    schema:
+      type: object
+      required: [id, name, price, tenant_id]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, maxLength: 100 }
+        description: { type: string }
+        price: { type: number, minimum: 0 }
+        category: { type: string }
+        status: { type: string, enum: [active, inactive, discontinued] }
+        tenant_id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_member"
+      write:
+        - role: admin
+        - rule: "tenant_admin"
+      delete:
+        - role: admin
+
+# Go function registry for testing
+go_function_registry:
+  validate_email:
+    package: "validation"
+    function: "ValidateEmail"
+    description: "Validate email format and domain restrictions"
+    params:
+      email: { type: "string", required: true }
+      allowed_domains: { type: "[]string", required: false }
+    returns: { type: "bool" }
+    
+  validate_price:
+    package: "validation"
+    function: "ValidatePrice"
+    description: "Validate product price"
+    params:
+      price: { type: "float64", required: true }
+      min_price: { type: "float64", default: 0 }
+    returns: { type: "bool" }
+    
+  send_email:
+    package: "communication"
+    function: "SendEmail"
+    description: "Send templated email"
+    params:
+      template: { type: "string", required: true }
+      to: { type: "string", required: true }
+      data: { type: "map[string]interface{}", required: true }
+    returns: { type: "error" }
+
+# Platform functions using Go functions
+platform_functions:
+  validate_user_email:
+    entity: users
+    type: validation
+    trigger: "before_create,before_update"
+    field: "email"
+    function: "validate_email"
+    config:
+      allowed_domains: ["test.com", "example.com"]
+    
+  validate_product_price:
+    entity: products
+    type: validation
+    trigger: "before_create,before_update"
+    field: "price"
+    function: "validate_price"
+    config:
+      min_price: 0.01
+    
+  welcome_new_user:
+    entity: users
+    type: hook
+    trigger: "after_create"
+    async: true
+    functions:
+      - function: "send_email"
+        config:
+          template: "user_welcome"
+          to_field: "email"
+          data:
+            name: "{{name || email}}"
+            service: "test-api"
+    events:
+      - event: "user.created"
+        data:
+          user_id: "{{id}}"
+          email: "{{email}}"
+          tenant_id: "{{tenant_id}}"
+
+# Access rules
+access_rules:
+  rules:
+    self: "current_user.id = resource.user_id OR current_user.id = resource.id"
+    tenant_member: "current_user.tenant_id = resource.tenant_id"
+    tenant_admin: "current_user.tenant_id = resource.tenant_id AND current_user.role IN ('admin', 'owner')"
+  roles:
+    admin:
+      description: "System administrator"
+      inherits: []
+    user:
+      description: "Regular user"
+      inherits: []
+
+# Events
+events:
+  user.created:
+    fields: [user_id, email, tenant_id]
+  product.created:
+    fields: [product_id, name, price, tenant_id]
+
+# Database indexes
+indexes:
+  users:
+    - fields: [email]
+      unique: true
+    - fields: [tenant_id, status]
+  products:
+    - fields: [tenant_id, category]
+    - fields: [status]

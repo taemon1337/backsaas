@@ -1,0 +1,16 @@
+node_modules
+.dist
+.next
+.out
+.env
+.env.local
+coverage
+pnpm-lock.yaml
+**/.DS_Store
+**/dist
+**/build
+**/.turbo
+**/.cache
+**/.vercel
+**/tmp
+**/*.log

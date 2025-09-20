@@ -1,0 +1,7 @@
+{
+  "name": "@backsaas/config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "tailwind-preset.js"
+}

@@ -1,0 +1,787 @@
+version: 1
+service:
+  name: "backsaas-platform"
+  description: "Self-hosted platform schema - manages tenants, users, schemas, and policies"
+
+# Platform entities that BackSaas uses to manage itself
+entities:
+  # Users and Authentication
+  users:
+    key: id
+    schema:
+      type: object
+      required: [id, email, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        name: { type: string }
+        status: { type: string, enum: [active, suspended, pending_verification] }
+        roles: { type: array, items: { type: string } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_login: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "self"  # Users can read their own record
+      write:
+        - role: admin
+        - rule: "self AND field IN ['name', 'updated_at']"  # Users can update limited fields
+      delete:
+        - role: admin
+
+  # Organizations/Tenants
+  tenants:
+    key: id
+    schema:
+      type: object
+      required: [id, slug, name, status, owner_id]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, pattern: "^[a-z0-9-]{3,40}$" }
+        name: { type: string, maxLength: 100 }
+        status: { type: string, enum: [active, suspended, deleting] }
+        owner_id: { type: string, format: uuid }
+        settings: { type: object }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_member"  # Members can read tenant info
+      write:
+        - role: admin
+        - rule: "tenant_owner"   # Only owners can modify tenant
+      delete:
+        - role: admin
+        - rule: "tenant_owner"
+
+  # Tenant memberships
+  tenant_memberships:
+    key: id
+    schema:
+      type: object
+      required: [id, tenant_id, user_id, role, status]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        user_id: { type: string, format: uuid }
+        role: { type: string, enum: [owner, admin, developer, viewer] }
+        status: { type: string, enum: [active, pending, revoked] }
+        invited_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_member AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+      delete:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+        - rule: "self AND user_id = current_user.id"  # Users can leave tenants
+
+  # Schema definitions
+  schemas:
+    key: id
+    schema:
+      type: object
+      required: [id, tenant_id, name, version, status, spec]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string, pattern: "^[a-z0-9_-]+$" }
+        version: { type: integer, minimum: 1 }
+        status: { type: string, enum: [draft, pending, active, deprecated, failed] }
+        spec: { type: object }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        deployed_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_member AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin
+        - rule: "tenant_developer AND tenant_id = resource.tenant_id"
+      delete:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+
+  # Migration tracking
+  migrations:
+    key: id
+    schema:
+      type: object
+      required: [id, tenant_id, schema_id, from_version, to_version, status]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        schema_id: { type: string, format: uuid }
+        from_version: { type: integer }
+        to_version: { type: integer }
+        status: { type: string, enum: [pending, running, completed, failed, rolled_back] }
+        phase: { type: string, enum: [expand, backfill, contract] }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        error_message: { type: string }
+        steps: { type: array, items: { type: object } }
+        created_by: { type: string, format: uuid }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_member AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin  # Only system can write migration records
+      delete:
+        - role: admin
+
+  # RBAC Policies
+  policies:
+    key: id
+    schema:
+      type: object
+      required: [id, tenant_id, name, rules, status]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        rules: { type: array, items: { type: object } }
+        status: { type: string, enum: [active, inactive] }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+      delete:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+
+  # API Keys for programmatic access
+  api_keys:
+    key: id
+    schema:
+      type: object
+      required: [id, tenant_id, name, key_hash, status]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string }
+        key_hash: { type: string }  # bcrypt hash of the key
+        key_prefix: { type: string }  # First 8 chars for identification
+        permissions: { type: array, items: { type: string } }
+        status: { type: string, enum: [active, revoked, expired] }
+        expires_at: { type: string, format: date-time }
+        last_used: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+      delete:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+
+  # Custom business logic functions
+  functions:
+    key: id
+    schema:
+      type: object
+      required: [id, tenant_id, name, type, trigger, code, status]
+      properties:
+        id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        name: { type: string, pattern: "^[a-z0-9_]+$" }
+        description: { type: string }
+        type: { type: string, enum: [validation, hook, computed, workflow, external] }
+        trigger: { type: string }  # "before_create:users", "field_change:status", etc.
+        field: { type: string }    # For validation functions
+        condition: { type: string } # Optional condition for execution
+        code: { type: string }
+        timeout: { type: string, default: "30s" }
+        async: { type: boolean, default: false }
+        status: { type: string, enum: [active, inactive, error] }
+        version: { type: integer, default: 1 }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        last_executed: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_developer AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin
+        - rule: "tenant_developer AND tenant_id = resource.tenant_id"
+      delete:
+        - role: admin
+        - rule: "tenant_admin AND tenant_id = resource.tenant_id"
+
+  # Function execution logs
+  function_executions:
+    key: id
+    schema:
+      type: object
+      required: [id, function_id, status, started_at]
+      properties:
+        id: { type: string, format: uuid }
+        function_id: { type: string, format: uuid }
+        tenant_id: { type: string, format: uuid }
+        trigger_event: { type: string }
+        input_data: { type: object }
+        output_data: { type: object }
+        status: { type: string, enum: [running, completed, failed, timeout] }
+        error_message: { type: string }
+        execution_time_ms: { type: integer }
+        memory_used_mb: { type: number }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_developer AND tenant_id = resource.tenant_id"
+      write:
+        - role: admin  # Only system writes execution logs
+      delete:
+        - role: admin
+
+  # Function test cases
+  function_tests:
+    key: id
+    schema:
+      type: object
+      required: [id, function_id, name, input_data, expected_result]
+      properties:
+        id: { type: string, format: uuid }
+        function_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        input_data: { type: object }
+        setup_sql: { type: string }  # SQL to run before test
+        expected_result: { type: string, enum: [success, error] }
+        expected_output: { type: object }
+        expected_error: { type: string }
+        last_run_status: { type: string, enum: [passed, failed, not_run] }
+        last_run_at: { type: string, format: date-time }
+        created_by: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+    access:
+      read:
+        - role: admin
+        - rule: "tenant_developer AND function.tenant_id = resource.function.tenant_id"
+      write:
+        - role: admin
+        - rule: "tenant_developer AND function.tenant_id = resource.function.tenant_id"
+      delete:
+        - role: admin
+        - rule: "tenant_developer AND function.tenant_id = resource.function.tenant_id"
+
+# Global access rules and role definitions
+access_rules:
+  # Custom rule definitions for complex access patterns
+  rules:
+    self: "current_user.id = resource.user_id OR current_user.id = resource.id"
+    tenant_member: "current_user.id IN (SELECT user_id FROM tenant_memberships WHERE tenant_id = resource.tenant_id AND status = 'active')"
+    tenant_owner: "current_user.id IN (SELECT user_id FROM tenant_memberships WHERE tenant_id = resource.tenant_id AND role = 'owner' AND status = 'active')"
+    tenant_admin: "current_user.id IN (SELECT user_id FROM tenant_memberships WHERE tenant_id = resource.tenant_id AND role IN ('owner', 'admin') AND status = 'active')"
+    tenant_developer: "current_user.id IN (SELECT user_id FROM tenant_memberships WHERE tenant_id = resource.tenant_id AND role IN ('owner', 'admin', 'developer') AND status = 'active')"
+
+  # Role hierarchy
+  roles:
+    admin:
+      description: "Platform administrator with full access"
+      inherits: []
+    tenant_owner:
+      description: "Tenant owner with full tenant access"
+      inherits: [tenant_admin]
+    tenant_admin:
+      description: "Tenant administrator"
+      inherits: [tenant_developer]
+    tenant_developer:
+      description: "Tenant developer with schema management access"
+      inherits: [tenant_viewer]
+    tenant_viewer:
+      description: "Read-only tenant access"
+      inherits: []
+
+# Event definitions for this schema
+events:
+  user.created:
+    fields: [id, email, name, status]
+  user.updated:
+    fields: [id, name, status, updated_at]
+  tenant.created:
+    fields: [id, slug, name, owner_id]
+  tenant.updated:
+    fields: [id, name, status, updated_at]
+  schema.created:
+    fields: [id, tenant_id, name, version, spec]
+  schema.updated:
+    fields: [id, version, spec, status]
+  migration.started:
+    fields: [id, tenant_id, schema_id, from_version, to_version]
+  migration.completed:
+    fields: [id, status, completed_at]
+
+# Go-native function system configuration
+function_system:
+  type: "go_native"
+  execution_model: "compiled"
+  registry_path: "internal/functions"
+  
+# Predefined Go functions available to all tenants
+go_function_registry:
+  # Data validation functions
+  validate_email:
+    package: "validation"
+    function: "ValidateEmail"
+    description: "Validate email format and domain restrictions"
+    params:
+      email: { type: "string", required: true }
+      allowed_domains: { type: "[]string", required: false }
+    returns: { type: "bool" }
+    
+  validate_password:
+    package: "validation" 
+    function: "ValidatePassword"
+    description: "Validate password strength requirements"
+    params:
+      password: { type: "string", required: true }
+      min_length: { type: "int", default: 8 }
+      require_uppercase: { type: "bool", default: true }
+      require_numbers: { type: "bool", default: true }
+    returns: { type: "bool" }
+    
+  validate_phone:
+    package: "validation"
+    function: "ValidatePhone"
+    description: "Validate phone number format"
+    params:
+      phone: { type: "string", required: true }
+      country_code: { type: "string", required: false }
+    returns: { type: "bool" }
+    
+  # Security functions
+  hash_password:
+    package: "security"
+    function: "HashPassword"
+    description: "Hash password using bcrypt"
+    params:
+      password: { type: "string", required: true }
+    returns: { type: "string" }
+    
+  generate_api_key:
+    package: "security"
+    function: "GenerateAPIKey"
+    description: "Generate cryptographically secure API key"
+    params:
+      prefix: { type: "string", default: "bks" }
+      length: { type: "int", default: 32 }
+    returns: { type: "string" }
+    
+  generate_slug:
+    package: "security"
+    function: "GenerateSlug"
+    description: "Generate URL-safe slug from text"
+    params:
+      text: { type: "string", required: true }
+      max_length: { type: "int", default: 50 }
+    returns: { type: "string" }
+    
+  # Communication functions
+  send_email:
+    package: "communication"
+    function: "SendEmail"
+    description: "Send templated email"
+    params:
+      template: { type: "string", required: true }
+      to: { type: "string", required: true }
+      data: { type: "map[string]interface{}", required: true }
+    returns: { type: "error" }
+    
+  send_webhook:
+    package: "communication"
+    function: "SendWebhook"
+    description: "Send HTTP webhook"
+    params:
+      url: { type: "string", required: true }
+      payload: { type: "map[string]interface{}", required: true }
+      timeout: { type: "time.Duration", default: "30s" }
+    returns: { type: "error" }
+    
+  # Utility functions
+  format_currency:
+    package: "utils"
+    function: "FormatCurrency"
+    description: "Format amount as currency"
+    params:
+      amount: { type: "float64", required: true }
+      currency: { type: "string", required: true }
+    returns: { type: "string" }
+    
+  parse_date:
+    package: "utils"
+    function: "ParseDate"
+    description: "Parse date string safely"
+    params:
+      date_string: { type: "string", required: true }
+      format: { type: "string", default: "2006-01-02" }
+    returns: { type: "time.Time" }
+    
+  calculate_age:
+    package: "utils"
+    function: "CalculateAge"
+    description: "Calculate age from birth date"
+    params:
+      birth_date: { type: "time.Time", required: true }
+    returns: { type: "int" }
+
+# Platform business logic using Go functions
+platform_functions:
+  # User registration and validation
+  validate_user_email:
+    entity: users
+    type: validation
+    trigger: "before_create,before_update"
+    field: "email"
+    function: "validate_email"
+    config:
+      allowed_domains: ["backsaas.com", "example.com"]
+    
+  validate_user_password:
+    entity: users
+    type: validation
+    trigger: "before_create,before_update"
+    field: "password"
+    function: "validate_password"
+    config:
+      min_length: 12
+      require_uppercase: true
+      require_numbers: true
+      require_symbols: true
+
+  setup_new_user:
+    entity: users
+    type: hook
+    trigger: "after_create"
+    async: true
+    functions:
+      - function: "send_email"
+        config:
+          template: "user_welcome"
+          to_field: "email"
+          data:
+            name: "{{name || email}}"
+            platform_url: "https://backsaas.com"
+    events:
+      - event: "user.created"
+        data:
+          user_id: "{{id}}"
+          email: "{{email}}"
+          created_at: "{{created_at}}"
+
+  # Tenant provisioning and management
+  validate_tenant_slug:
+    entity: tenants
+    type: validation
+    trigger: "before_create,before_update"
+    field: "slug"
+    function: "generate_slug"
+    config:
+      max_length: 40
+      reserved_words: ["api", "www", "admin", "app", "dashboard", "docs", "help", "support", "blog"]
+      check_uniqueness: true
+
+  provision_tenant:
+    entity: tenants
+    type: hook
+    trigger: "after_create"
+    async: true
+    code: |
+      async function provision(record, context) {
+        context.log.info('Provisioning new tenant', { tenant_id: record.id, slug: record.slug });
+        
+        try {
+          // Create tenant owner membership
+          await context.query(
+            'INSERT INTO tenant_memberships (id, tenant_id, user_id, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+            [context.crypto.uuid(), record.id, record.owner_id, 'owner', 'active', new Date().toISOString()]
+          );
+          
+          // Create default schema for tenant
+          const defaultSchema = {
+            id: context.crypto.uuid(),
+            tenant_id: record.id,
+            name: 'default',
+            version: 1,
+            status: 'active',
+            spec: JSON.stringify({
+              version: 1,
+              service: { name: record.slug + '-api' },
+              entities: {
+                users: {
+                  key: 'id',
+                  schema: {
+                    type: 'object',
+                    required: ['id', 'email'],
+                    properties: {
+                      id: { type: 'string', format: 'uuid' },
+                      email: { type: 'string', format: 'email' },
+                      name: { type: 'string' },
+                      created_at: { type: 'string', format: 'date-time' }
+                    }
+                  }
+                }
+              }
+            }),
+            created_by: record.owner_id,
+            created_at: new Date().toISOString()
+          };
+          
+          await context.query(
+            'INSERT INTO schemas (id, tenant_id, name, version, status, spec, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [defaultSchema.id, defaultSchema.tenant_id, defaultSchema.name, defaultSchema.version, 
+             defaultSchema.status, defaultSchema.spec, defaultSchema.created_by, defaultSchema.created_at]
+          );
+          
+          // Send tenant welcome email
+          const owner = context.query('SELECT email, name FROM users WHERE id = ?', [record.owner_id])[0];
+          await context.email.send({
+            to: owner.email,
+            template: 'tenant_welcome',
+            data: {
+              tenant_name: record.name,
+              tenant_slug: record.slug,
+              owner_name: owner.name || owner.email,
+              dashboard_url: `https://app.backsaas.com/${record.slug}`
+            }
+          });
+          
+          // Publish tenant provisioned event
+          await context.events.publish('tenant.provisioned', {
+            tenant_id: record.id,
+            slug: record.slug,
+            owner_id: record.owner_id,
+            schema_id: defaultSchema.id
+          });
+          
+          context.log.info('Tenant provisioning completed', { tenant_id: record.id });
+          
+        } catch (error) {
+          context.log.error('Tenant provisioning failed', { 
+            tenant_id: record.id, 
+            error: error.message 
+          });
+          
+          // Update tenant status to indicate provisioning failure
+          await context.query(
+            'UPDATE tenants SET status = ? WHERE id = ?',
+            ['suspended', record.id]
+          );
+          
+          throw new BusinessLogicError('Tenant provisioning failed: ' + error.message);
+        }
+      }
+
+  # Schema validation and management
+  validate_schema_spec:
+    entity: schemas
+    type: validation
+    trigger: "before_create,before_update"
+    field: "spec"
+    code: |
+      function validate(value, record, context) {
+        try {
+          // Parse JSON spec
+          const spec = typeof value === 'string' ? JSON.parse(value) : value;
+          
+          // Basic schema validation
+          if (!spec.version || !spec.entities) {
+            throw new ValidationError('Schema must have version and entities');
+          }
+          
+          // Validate entity definitions
+          for (const [entityName, entityDef] of Object.entries(spec.entities)) {
+            if (!entityDef.key || !entityDef.schema) {
+              throw new ValidationError(`Entity ${entityName} must have key and schema`);
+            }
+            
+            if (!entityDef.schema.type || entityDef.schema.type !== 'object') {
+              throw new ValidationError(`Entity ${entityName} schema must be object type`);
+            }
+          }
+          
+          return typeof value === 'string' ? value : JSON.stringify(spec);
+          
+        } catch (error) {
+          if (error instanceof ValidationError) {
+            throw error;
+          }
+          throw new ValidationError('Invalid JSON schema: ' + error.message);
+        }
+      }
+
+  detect_schema_changes:
+    entity: schemas
+    type: hook
+    trigger: "before_update"
+    condition: "field_changed('spec')"
+    code: |
+      async function detectChanges(record, context) {
+        context.log.info('Detecting schema changes', { schema_id: record.id });
+        
+        // Get current schema
+        const current = context.query('SELECT spec, version FROM schemas WHERE id = ?', [record.id])[0];
+        const oldSpec = JSON.parse(current.spec);
+        const newSpec = JSON.parse(record.spec);
+        
+        // Detect breaking changes
+        const breakingChanges = [];
+        
+        // Check for removed entities
+        for (const entityName of Object.keys(oldSpec.entities || {})) {
+          if (!newSpec.entities || !newSpec.entities[entityName]) {
+            breakingChanges.push({
+              type: 'entity_removed',
+              entity: entityName
+            });
+          }
+        }
+        
+        // Check for field changes in existing entities
+        for (const [entityName, newEntity] of Object.entries(newSpec.entities || {})) {
+          const oldEntity = oldSpec.entities?.[entityName];
+          if (oldEntity) {
+            // Check for removed required fields
+            const oldRequired = oldEntity.schema?.required || [];
+            const newRequired = newEntity.schema?.required || [];
+            
+            for (const field of oldRequired) {
+              if (!newRequired.includes(field)) {
+                breakingChanges.push({
+                  type: 'required_field_removed',
+                  entity: entityName,
+                  field: field
+                });
+              }
+            }
+          }
+        }
+        
+        if (breakingChanges.length > 0) {
+          // Create migration record
+          const migrationId = context.crypto.uuid();
+          await context.query(
+            'INSERT INTO migrations (id, tenant_id, schema_id, from_version, to_version, status, created_by, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [migrationId, record.tenant_id, record.id, current.version, record.version, 'pending', 
+             context.user.id, new Date().toISOString()]
+          );
+          
+          // Publish migration required event
+          await context.events.publish('schema.migration.required', {
+            migration_id: migrationId,
+            tenant_id: record.tenant_id,
+            schema_id: record.id,
+            breaking_changes: breakingChanges
+          });
+          
+          context.log.info('Breaking changes detected, migration required', { 
+            schema_id: record.id, 
+            migration_id: migrationId,
+            breaking_changes: breakingChanges
+          });
+        } else {
+          // Compatible change, publish hot-reload event
+          await context.events.publish('schema.updated.compatible', {
+            tenant_id: record.tenant_id,
+            schema_id: record.id,
+            old_version: current.version,
+            new_version: record.version
+          });
+          
+          context.log.info('Compatible schema change detected', { schema_id: record.id });
+        }
+      }
+
+  # API key management
+  generate_api_key:
+    entity: api_keys
+    type: hook
+    trigger: "before_create"
+    code: |
+      function generate(record, context) {
+        // Generate secure API key
+        const keyBytes = context.crypto.randomBytes(32);
+        const key = 'bks_' + keyBytes;
+        
+        // Hash the key for storage
+        record.key_hash = context.crypto.hash(key);
+        record.key_prefix = key.substring(0, 12) + '...';
+        
+        // Store the full key temporarily for return to user (one-time display)
+        record._generated_key = key;
+        
+        context.log.info('API key generated', { 
+          api_key_id: record.id, 
+          tenant_id: record.tenant_id,
+          prefix: record.key_prefix
+        });
+        
+        return record;
+      }
+
+# Database indexes for performance
+indexes:
+  users:
+    - fields: [email]
+      unique: true
+    - fields: [status]
+  tenants:
+    - fields: [slug]
+      unique: true
+    - fields: [owner_id]
+    - fields: [status]
+  tenant_memberships:
+    - fields: [tenant_id, user_id]
+      unique: true
+    - fields: [user_id]
+    - fields: [tenant_id, role]
+  schemas:
+    - fields: [tenant_id, name]
+    - fields: [tenant_id, version]
+    - fields: [status]
+  migrations:
+    - fields: [tenant_id, status]
+    - fields: [schema_id]
+    - fields: [status, created_at]
+  api_keys:
+    - fields: [tenant_id]
+    - fields: [key_hash]
+      unique: true
+    - fields: [status]
+  functions:
+    - fields: [tenant_id, name]
+      unique: true
+    - fields: [tenant_id, type]
+    - fields: [status]
+    - fields: [trigger]
+  function_executions:
+    - fields: [function_id, started_at]
+    - fields: [tenant_id, status]
+    - fields: [status, started_at]
+  function_tests:
+    - fields: [function_id]
+    - fields: [last_run_status]

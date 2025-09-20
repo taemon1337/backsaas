@@ -1,0 +1,213 @@
+# BackSaas API Gateway Configuration
+# This file defines routing rules, authentication, rate limiting, and other gateway settings
+
+# Basic gateway settings
+port: "8000"
+environment: "development"
+
+# Authentication configuration
+auth:
+  enabled: true
+  required: false  # Set to true to require auth for all routes by default
+  header_name: "Authorization"
+  jwt_secret: ""  # Will be overridden by environment variable
+  bypass_paths:
+    - "/health"
+    - "/metrics"
+    - "/api/auth/login"
+    - "/api/auth/register"
+
+# Rate limiting configuration
+rate_limit:
+  enabled: true
+  requests_per_minute: 100
+  burst_size: 20
+  key_strategy: "ip"  # ip, user, tenant, custom
+  
+  # Different limits for different user types
+  limits:
+    admin: 
+      requests_per_minute: 1000
+      burst_size: 100
+    premium:
+      requests_per_minute: 500
+      burst_size: 50
+    free:
+      requests_per_minute: 60
+      burst_size: 10
+
+# CORS configuration
+cors:
+  enabled: true
+  allowed_origins:
+    - "http://localhost:3000"
+    - "https://*.backsaas.dev"
+    - "https://*.backsaas.com"
+  allowed_methods:
+    - "GET"
+    - "POST"
+    - "PUT"
+    - "DELETE"
+    - "OPTIONS"
+    - "PATCH"
+  allowed_headers:
+    - "Content-Type"
+    - "Authorization"
+    - "X-Tenant-ID"
+    - "X-Request-ID"
+  allow_credentials: true
+  max_age: 3600
+
+# Monitoring and logging
+monitoring:
+  enabled: true
+  metrics_path: "/metrics"
+  health_path: "/health"
+  log_level: "info"
+  log_format: "json"
+  log_requests: true
+  tracing_enabled: false
+
+# Route definitions
+routes:
+  # Platform API (system tenant) - manages tenants, schemas, etc.
+  - description: "Platform Management API"
+    tenant_id: "system"
+    path_prefix: "/platform"
+    backend:
+      url: "http://localhost:8080"
+      timeout: "30s"
+      max_retries: 3
+      health_check_path: "/health"
+    auth:
+      enabled: true
+      required: true
+      required_roles: ["admin", "platform_admin"]
+    rate_limit:
+      enabled: true
+      requests_per_minute: 200
+      burst_size: 50
+    enabled: true
+
+  # Tenant API routing by subdomain (tenant.api.example.com)
+  - description: "Tenant API by Subdomain"
+    host: "*.api.backsaas.dev"
+    path_prefix: "/api"
+    backend:
+      url: "http://localhost:8081"  # Tenant API service
+      timeout: "30s"
+      max_retries: 3
+      health_check_path: "/health"
+    transform:
+      add_headers:
+        X-Gateway-Route: "tenant-subdomain"
+    auth:
+      enabled: true
+      required: true
+    rate_limit:
+      enabled: true
+      requests_per_minute: 300
+      burst_size: 60
+    enabled: true
+
+  # Tenant API routing by path (/tenant/{tenant-id}/api/...)
+  - description: "Tenant API by Path"
+    path_prefix: "/tenant/"
+    backend:
+      url: "http://localhost:8081"
+      timeout: "30s"
+      max_retries: 3
+      health_check_path: "/health"
+    transform:
+      add_headers:
+        X-Gateway-Route: "tenant-path"
+      rewrite_path: "/api"  # Remove /tenant/{id} prefix
+    auth:
+      enabled: true
+      required: true
+    rate_limit:
+      enabled: true
+      requests_per_minute: 300
+      burst_size: 60
+    enabled: true
+
+  # Authentication service
+  - description: "Authentication API"
+    path_prefix: "/auth"
+    backend:
+      url: "http://localhost:8082"
+      timeout: "15s"
+      max_retries: 2
+      health_check_path: "/health"
+    auth:
+      enabled: false  # Auth service doesn't need auth
+    rate_limit:
+      enabled: true
+      requests_per_minute: 60
+      burst_size: 20
+    enabled: true
+
+  # Static assets and documentation
+  - description: "Static Assets"
+    path_prefix: "/static"
+    backend:
+      url: "http://localhost:8083"
+      timeout: "10s"
+      max_retries: 1
+    auth:
+      enabled: false
+    rate_limit:
+      enabled: true
+      requests_per_minute: 500
+      burst_size: 100
+    enabled: true
+
+  # API documentation
+  - description: "API Documentation"
+    path_prefix: "/docs"
+    backend:
+      url: "http://localhost:8084"
+      timeout: "10s"
+      max_retries: 1
+    auth:
+      enabled: false
+    rate_limit:
+      enabled: true
+      requests_per_minute: 100
+      burst_size: 20
+    enabled: true
+
+  # Webhook endpoints (higher rate limits)
+  - description: "Webhook Endpoints"
+    path_prefix: "/webhooks"
+    backend:
+      url: "http://localhost:8085"
+      timeout: "60s"
+      max_retries: 1
+    auth:
+      enabled: true
+      required: true
+      required_scopes: ["webhook:receive"]
+    rate_limit:
+      enabled: true
+      requests_per_minute: 1000
+      burst_size: 200
+    transform:
+      add_headers:
+        X-Gateway-Route: "webhook"
+    enabled: true
+
+  # Health check aggregation
+  - description: "Health Check Aggregation"
+    path_prefix: "/health/services"
+    backend:
+      url: "http://localhost:8086"
+      timeout: "5s"
+      max_retries: 1
+    auth:
+      enabled: false
+    rate_limit:
+      enabled: true
+      requests_per_minute: 30
+      burst_size: 10
+    enabled: true
