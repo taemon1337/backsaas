@@ -15,6 +15,7 @@ import (
 type Engine struct {
 	schema   *schema.Schema
 	db       *sql.DB
+	dbOps    *DatabaseOperations
 	tenantID string
 	router   *gin.Engine
 }
@@ -57,11 +58,20 @@ func NewEngine(config *Config) (*Engine, error) {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
 	
+	// Create database operations handler
+	dbOps := NewDatabaseOperations(db, config.TenantID)
+	
 	// Create engine
 	engine := &Engine{
 		schema:   schemaObj,
 		db:       db,
+		dbOps:    dbOps,
 		tenantID: config.TenantID,
+	}
+	
+	// Ensure database tables exist for all entities
+	if err := dbOps.EnsureTablesExist(schemaObj); err != nil {
+		return nil, fmt.Errorf("failed to ensure database tables exist: %w", err)
 	}
 	
 	// Setup router
@@ -166,23 +176,34 @@ func (e *Engine) listEntities(entityName string, entity *schema.Entity) gin.Hand
 			return
 		}
 		
-		// Build query with tenant scoping
-		query := fmt.Sprintf("SELECT * FROM %s WHERE tenant_id = $1", entityName)
+		// Parse query parameters for filtering, pagination, sorting
+		filters := make(map[string]interface{})
+		for key, values := range c.Request.URL.Query() {
+			if len(values) > 0 && key != "limit" && key != "offset" && key != "order_by" {
+				filters[key] = values[0]
+			}
+		}
 		
-		// Add filters from query parameters
-		// TODO: Implement filtering, pagination, sorting
+		// Parse pagination parameters
+		limit := 50 // default limit
+		offset := 0
+		if limitStr := c.Query("limit"); limitStr != "" {
+			if parsedLimit, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && parsedLimit == 1 {
+				if limit > 1000 {
+					limit = 1000 // max limit
+				}
+			}
+		}
+		if offsetStr := c.Query("offset"); offsetStr != "" {
+			fmt.Sscanf(offsetStr, "%d", &offset)
+		}
 		
-		rows, err := e.db.Query(query, e.tenantID)
+		orderBy := c.Query("order_by")
+		
+		// Query entities using database operations
+		results, err := e.dbOps.QueryEntities(entityName, entity, filters, limit, offset, orderBy)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
-			return
-		}
-		defer rows.Close()
-		
-		// Convert rows to JSON
-		results, err := e.rowsToJSON(rows, entity)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process results"})
 			return
 		}
 		
@@ -214,7 +235,7 @@ func (e *Engine) createEntity(entityName string, entity *schema.Entity) gin.Hand
 		data["tenant_id"] = e.tenantID
 		
 		// Validate data against schema
-		if err := e.validateEntityData(entity, data); err != nil {
+		if err := e.dbOps.ValidateEntityData(entity, data); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -232,7 +253,7 @@ func (e *Engine) createEntity(entityName string, entity *schema.Entity) gin.Hand
 		}
 		
 		// Insert into database
-		result, err := e.insertEntity(entityName, entity, data)
+		result, err := e.dbOps.InsertEntity(entityName, entity, data)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create entity"})
 			return
@@ -256,14 +277,9 @@ func (e *Engine) getEntity(entityName string, entity *schema.Entity) gin.Handler
 	return func(c *gin.Context) {
 		id := c.Param("id")
 		
-		query := fmt.Sprintf("SELECT * FROM %s WHERE %s = $1 AND tenant_id = $2", 
-			entityName, entity.Key)
-		
-		row := e.db.QueryRow(query, id, e.tenantID)
-		
-		result, err := e.rowToJSON(row, entity)
+		result, err := e.dbOps.GetEntity(entityName, entity, id)
 		if err != nil {
-			if err == sql.ErrNoRows {
+			if err.Error() == "entity not found" {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Entity not found"})
 				return
 			}
@@ -293,7 +309,7 @@ func (e *Engine) updateEntity(entityName string, entity *schema.Entity) gin.Hand
 		data[entity.Key] = id
 		
 		// Validate data against schema
-		if err := e.validateEntityData(entity, data); err != nil {
+		if err := e.dbOps.ValidateEntityData(entity, data); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -311,8 +327,12 @@ func (e *Engine) updateEntity(entityName string, entity *schema.Entity) gin.Hand
 		}
 		
 		// Update in database
-		result, err := e.updateEntityInDB(entityName, entity, id, data)
+		result, err := e.dbOps.UpdateEntity(entityName, entity, id, data)
 		if err != nil {
+			if err.Error() == "entity not found" {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Entity not found"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update entity"})
 			return
 		}
@@ -342,18 +362,13 @@ func (e *Engine) deleteEntity(entityName string, entity *schema.Entity) gin.Hand
 		}
 		
 		// Delete from database
-		query := fmt.Sprintf("DELETE FROM %s WHERE %s = $1 AND tenant_id = $2", 
-			entityName, entity.Key)
-		
-		result, err := e.db.Exec(query, id, e.tenantID)
+		err := e.dbOps.DeleteEntity(entityName, entity, id)
 		if err != nil {
+			if err.Error() == "entity not found" {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Entity not found"})
+				return
+			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete entity"})
-			return
-		}
-		
-		rowsAffected, _ := result.RowsAffected()
-		if rowsAffected == 0 {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Entity not found"})
 			return
 		}
 		
@@ -376,38 +391,13 @@ func (e *Engine) Start(port string) error {
 	return e.router.Run(":" + port)
 }
 
-// Helper methods will be implemented in separate files
+// Helper methods for hooks and validation functions
 func (e *Engine) executeHooks(trigger, entityName string, data interface{}, c *gin.Context) error {
-	// TODO: Implement hook execution
+	// TODO: Implement hook execution system
 	return nil
 }
 
 func (e *Engine) executeValidationFunctions(entityName, trigger string, data map[string]interface{}, c *gin.Context) error {
 	// TODO: Implement validation function execution
 	return nil
-}
-
-func (e *Engine) validateEntityData(entity *schema.Entity, data map[string]interface{}) error {
-	// TODO: Implement schema validation
-	return nil
-}
-
-func (e *Engine) insertEntity(entityName string, entity *schema.Entity, data map[string]interface{}) (map[string]interface{}, error) {
-	// TODO: Implement database insert
-	return data, nil
-}
-
-func (e *Engine) updateEntityInDB(entityName string, entity *schema.Entity, id string, data map[string]interface{}) (map[string]interface{}, error) {
-	// TODO: Implement database update
-	return data, nil
-}
-
-func (e *Engine) rowsToJSON(rows *sql.Rows, entity *schema.Entity) ([]map[string]interface{}, error) {
-	// TODO: Implement rows to JSON conversion
-	return []map[string]interface{}{}, nil
-}
-
-func (e *Engine) rowToJSON(row *sql.Row, entity *schema.Entity) (map[string]interface{}, error) {
-	// TODO: Implement row to JSON conversion
-	return map[string]interface{}{}, nil
 }

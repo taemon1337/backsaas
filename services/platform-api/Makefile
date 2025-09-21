@@ -10,7 +10,7 @@
 # All Go operations (build, test, format, lint) use temporary Docker containers
 # that are automatically removed after execution (--rm flag).
 
-.PHONY: build test test-verbose test-coverage run run-platform run-tenant clean help
+.PHONY: build build-test-server test test-verbose test-coverage run run-platform run-tenant run-test-server clean help
 
 # Build configuration
 BINARY_NAME=platform-api
@@ -49,6 +49,11 @@ $(BUILD_DIR)/$(BINARY_NAME): $(GO_FILES)
 	@mkdir -p $(BUILD_DIR)
 	# NOTE: Using Docker container to ensure consistent build environment
 	$(DOCKER_GO_BUILD) go build -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/server
+
+build-test-server: ## Build the test server binary
+	@echo "Building test-server in Docker container..."
+	@mkdir -p $(BUILD_DIR)
+	$(DOCKER_GO_BUILD) go build -o $(BUILD_DIR)/test-server ./cmd/test-server
 
 # Test targets
 test: ## Run all tests in Docker container
@@ -112,12 +117,12 @@ run-tenant: build ## Build and run as tenant API (requires TENANT_ID and SCHEMA_
 		echo "Usage: make run-tenant TENANT_ID=acme-corp SCHEMA_PATH=path/to/schema.yaml"; \
 		exit 1; \
 	fi
-	$(BUILD_DIR)/$(BINARY_NAME) \
-		-tenant-id=$(TENANT_ID) \
-		-schema-source=file \
-		-schema-path=$(SCHEMA_PATH) \
-		-database-url="postgres://postgres:postgres@localhost:5432/backsaas_$(TENANT_ID)?sslmode=disable" \
-		-port=8080
+
+run-test-server: build-test-server ## Build and run test server with sample CRM schema
+	@echo "🚀 Starting test server with sample CRM schema..."
+	@echo "📊 Available at: http://localhost:8081"
+	@echo "💡 Use Ctrl+C to stop"
+	$(BUILD_DIR)/test-server
 
 # Development targets
 dev: ## Run in development mode with hot reload using Docker

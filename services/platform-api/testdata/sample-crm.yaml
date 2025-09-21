@@ -1,0 +1,110 @@
+version: 1
+service:
+  name: "sample-crm"
+  description: "Sample CRM system for testing database operations"
+
+entities:
+  contacts:
+    key: "contact_id"
+    schema:
+      type: "object"
+      required: ["contact_id", "email", "first_name", "last_name"]
+      properties:
+        contact_id:
+          type: "string"
+        email:
+          type: "string"
+          format: "email"
+        first_name:
+          type: "string"
+          minLength: 1
+          maxLength: 50
+        last_name:
+          type: "string"
+          minLength: 1
+          maxLength: 50
+        phone:
+          type: "string"
+          pattern: "^[+]?[1-9]?[0-9]{7,15}$"
+        company:
+          type: "string"
+          maxLength: 100
+        status:
+          type: "string"
+          enum: ["lead", "prospect", "customer", "inactive"]
+          default: "lead"
+        tags:
+          type: "array"
+          items:
+            type: "string"
+        metadata:
+          type: "object"
+        created_date:
+          type: "string"
+          format: "date-time"
+
+  companies:
+    key: "company_id"
+    schema:
+      type: "object"
+      required: ["company_id", "name"]
+      properties:
+        company_id:
+          type: "string"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+        industry:
+          type: "string"
+          maxLength: 50
+        size:
+          type: "string"
+          enum: ["startup", "small", "medium", "large", "enterprise"]
+        website:
+          type: "string"
+          format: "uri"
+        address:
+          type: "object"
+        annual_revenue:
+          type: "number"
+          minimum: 0
+        active:
+          type: "boolean"
+          default: true
+
+  deals:
+    key: "deal_id"
+    schema:
+      type: "object"
+      required: ["deal_id", "title", "contact_id", "amount", "stage"]
+      properties:
+        deal_id:
+          type: "string"
+        title:
+          type: "string"
+          minLength: 1
+          maxLength: 200
+        contact_id:
+          type: "string"
+        company_id:
+          type: "string"
+        amount:
+          type: "number"
+          minimum: 0
+        currency:
+          type: "string"
+          enum: ["USD", "EUR", "GBP", "CAD"]
+          default: "USD"
+        stage:
+          type: "string"
+          enum: ["prospecting", "qualification", "proposal", "negotiation", "closed_won", "closed_lost"]
+        probability:
+          type: "integer"
+          minimum: 0
+          maximum: 100
+        expected_close_date:
+          type: "string"
+          format: "date"
+        notes:
+          type: "string"
