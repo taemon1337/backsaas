@@ -2,9 +2,11 @@ package validation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
-	"github.com/backsaas/platform/api/internal/functions"
+	"golang.org/x/crypto/bcrypt"
+	"github.com/backsaas/platform/api/internal/types"
 )
 
 // MockDataService for testing
@@ -78,8 +80,8 @@ func (m *MockLogger) Error(msg string, err error, fields map[string]interface{})
 	m.logs = append(m.logs, "ERROR: "+msg)
 }
 
-func createTestContext() *functions.ExecutionContext {
-	return &functions.ExecutionContext{
+func createTestContext() *types.ExecutionContext {
+	return &types.ExecutionContext{
 		TenantID:     "test-tenant",
 		UserID:       "test-user",
 		RequestID:    "test-request",

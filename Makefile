@@ -10,12 +10,12 @@
 # All operations use temporary Docker containers that are automatically
 # removed after execution (--rm flag).
 
-.PHONY: help build test clean dev setup
+.PHONY: help build test clean dev setup dev-up dev-down dev-logs dev-status test-all test-unit test-integration test-setup test-clean mod-tidy
 
 # Docker images for different tools
 # NOTE: Always use specific versions for reproducible builds
 # Using full golang image (not alpine) to include git for go mod operations
-GO_IMAGE=golang:1.21
+GO_IMAGE=golang:1.23
 NODE_IMAGE=node:18-alpine
 POSTGRES_IMAGE=postgres:15-alpine
 
@@ -60,7 +60,7 @@ setup-db: ## Setup PostgreSQL database container
 	@docker exec backsaas-db psql -U postgres -c "CREATE DATABASE backsaas_test;" || echo "Test DB exists"
 
 setup-services: ## Install dependencies for all services using Docker
-	@echo "Installing dependencies for all services..."
+	@echo "📦 Downloading dependencies in Docker container..."
 	# NOTE: Create Go cache directories if they don't exist
 	@mkdir -p $(HOME)/go/pkg/mod $(HOME)/.cache/go-build
 	# NOTE: Platform API dependencies (Go modules) with cache mounts
@@ -86,6 +86,26 @@ setup-services: ## Install dependencies for all services using Docker
 	else \
 		echo "Skipping Web UI setup (apps/web not found)"; \
 	fi
+
+mod-tidy: ## Run go mod tidy on all Go modules using Docker
+	@echo "🧹 Running go mod tidy on all Go modules in Docker containers..."
+	@mkdir -p $(HOME)/go/pkg/mod $(HOME)/.cache/go-build
+	# NOTE: Platform API
+	@echo "Tidying Platform API Go modules..."
+	cd services/platform-api && $(DOCKER_GO) go mod tidy
+	# NOTE: Gateway
+	@echo "Tidying Gateway Go modules..."
+	cd services/gateway && $(DOCKER_GO) go mod tidy
+	# NOTE: API Service
+	@echo "Tidying API Service Go modules..."
+	cd services/api && $(DOCKER_GO) go mod tidy
+	# NOTE: Migrator
+	@echo "Tidying Migrator Go modules..."
+	cd services/migrator && $(DOCKER_GO) go mod tidy
+	# NOTE: CLI
+	@echo "Tidying CLI Go modules..."
+	cd cmd/backsaas && $(DOCKER_GO) go mod tidy
+	@echo "✅ All Go modules tidied"
 
 # Build targets
 build: ## Build all services using Docker containers
@@ -114,25 +134,62 @@ build-web: ## Build Web UI
 	fi
 
 # Test targets
-test: ## Run all tests using Docker containers
-	@echo "Running all tests in Docker containers..."
-	$(MAKE) test-platform-api
-	$(MAKE) test-gateway
-	$(MAKE) test-web
+test: test-all ## Run all tests using enhanced testing infrastructure (alias for test-all)
 
-test-platform-api: ## Test Platform API service
-	@echo "Testing Platform API in Docker container..."
-	# NOTE: Using Docker container for Go tests
+# Enhanced testing infrastructure
+test-all: ## Run comprehensive tests in isolated Docker environment
+	@echo "🚀 Running comprehensive BackSaaS tests..."
+	@echo "📋 Using enhanced testing infrastructure with isolated environment"
+	@$(MAKE) -f Makefile.test test-all
+
+test-unit: ## Run unit tests only
+	@echo "🧪 Running unit tests in isolated environment..."
+	@$(MAKE) -f Makefile.test test-unit
+
+test-integration: ## Run integration tests only
+	@echo "🔗 Running integration tests in isolated environment..."
+	@$(MAKE) -f Makefile.test test-integration
+
+test-setup: ## Setup isolated test environment
+	@echo "🔧 Setting up isolated test environment..."
+	@$(MAKE) -f Makefile.test test-setup
+
+test-clean: ## Clean test environment and results
+	@echo "🧹 Cleaning test environment..."
+	@$(MAKE) -f Makefile.test test-clean
+
+test-coverage: ## Generate test coverage reports
+	@echo "📊 Generating coverage reports..."
+	@$(MAKE) -f Makefile.test test-coverage
+
+test-results: ## Start test results server
+	@echo "🌐 Starting test results server..."
+	@$(MAKE) -f Makefile.test test-results-server
+	@echo "📊 View results at: http://localhost:8888"
+
+test-e2e: ## Run CLI-based end-to-end platform tests
+	@echo "🎯 Running CLI-based end-to-end platform tests..."
+	@$(MAKE) -f Makefile.test test-e2e
+
+test-cli-platform: ## Run CLI platform tests within Docker network
+	@echo "🏗️  Running CLI platform tests..."
+	@$(MAKE) -f Makefile.test test-cli-platform
+
+test-cli-tenant-lifecycle: ## Run CLI tenant lifecycle tests
+	@echo "🏢 Running CLI tenant lifecycle tests..."
+	@$(MAKE) -f Makefile.test test-cli-tenant-lifecycle
+
+# Legacy test targets (for backward compatibility)
+test-platform-api: ## Test Platform API service (legacy)
+	@echo "⚠️  Using legacy test method. Consider using 'make test-unit' instead."
 	cd services/platform-api && $(MAKE) test
 
-test-gateway: ## Test Gateway service
-	@echo "Testing Gateway in Docker container..."
-	# NOTE: Using Docker container for Go tests
+test-gateway: ## Test Gateway service (legacy)
+	@echo "⚠️  Using legacy test method. Consider using 'make test-unit' instead."
 	cd services/gateway && $(MAKE) test
 
-test-web: ## Test Web UI
-	@echo "Testing Web UI in Docker container..."
-	# NOTE: Using Docker container for Node.js tests - skip if doesn't exist
+test-web: ## Test Web UI (legacy)
+	@echo "⚠️  Using legacy test method. Consider using 'make test-unit' instead."
 	@if [ -d "apps/web" ]; then \
 		cd apps/web && docker run --rm -v $(PWD)/apps/web:/app -w /app $(NODE_IMAGE) npm test; \
 	else \
@@ -140,10 +197,41 @@ test-web: ## Test Web UI
 	fi
 
 # Development targets
-dev: ## Start development environment with Docker Compose
-	@echo "Starting development environment..."
-	@echo "NOTE: All services run in Docker containers"
-	docker-compose -f docker-compose.dev.yml up --build
+dev: dev-up ## Start development environment with Docker Compose (alias for dev-up)
+
+dev-up: ## Start complete development environment with Docker Compose
+	@echo "🚀 Starting BackSaas development environment..."
+	@echo "📊 Services will be available at:"
+	@echo "  - Platform API: http://localhost:8080"
+	@echo "  - API Gateway: http://localhost:8000"
+	@echo "  - Test Tenant API: http://localhost:8081"
+	@echo "  - Database Admin: http://localhost:8082"
+	@echo "  - Prometheus: http://localhost:9090 (with --profile monitoring)"
+	@echo "  - Grafana: http://localhost:3001 (with --profile monitoring)"
+	@echo ""
+	@echo "💡 Use 'make dev-logs' to see logs, 'make dev-down' to stop"
+	docker compose up --build -d
+
+dev-down: ## Stop development environment
+	@echo "🛑 Stopping BackSaas development environment..."
+	docker compose down
+
+dev-logs: ## Show logs from development environment
+	@echo "📋 Showing logs from all services (Ctrl+C to exit)..."
+	docker compose logs -f
+
+dev-status: ## Show status of development services
+	@echo "📊 BackSaas Development Environment Status:"
+	@echo "==========================================="
+	docker compose ps
+
+dev-monitoring: ## Start development environment with monitoring
+	@echo "🚀 Starting BackSaas with monitoring (Prometheus + Grafana)..."
+	docker compose --profile monitoring up --build -d
+
+dev-db-only: ## Start only database services
+	@echo "🗄️ Starting only database services..."
+	docker compose up postgres redis adminer -d
 
 dev-platform-api: ## Start Platform API in development mode
 	@echo "Starting Platform API development server..."
@@ -198,14 +286,14 @@ docker-build: ## Build all Docker images
 
 docker-up: ## Start all services with Docker Compose
 	@echo "Starting all services with Docker Compose..."
-	docker-compose up --build -d
+	docker compose up --build -d
 
 docker-down: ## Stop all services
 	@echo "Stopping all services..."
-	docker-compose down
+	docker compose down
 
 docker-logs: ## Show logs from all services
-	docker-compose logs -f
+	docker compose logs -f
 
 # Database management
 db-migrate: ## Run database migrations using Docker
@@ -223,16 +311,16 @@ db-reset: ## Reset database (clean + setup)
 
 # Monitoring and debugging
 logs: ## Show logs from development environment
-	docker-compose -f docker-compose.dev.yml logs -f
+	docker compose logs -f
 
 ps: ## Show running containers
-	docker-compose ps
+	docker compose ps
 
 # Check tools
 check-tools: ## Check if required tools are installed
 	@echo "Checking required tools..."
 	@command -v docker >/dev/null 2>&1 || { echo "Docker is required but not installed"; exit 1; }
-	@command -v docker-compose >/dev/null 2>&1 || { echo "Docker Compose is required but not installed"; exit 1; }
+	@docker compose version >/dev/null 2>&1 || { echo "Docker Compose is required but not installed"; exit 1; }
 	@echo "All required tools are installed!"
 	@echo "NOTE: Go, Node.js, and other tools will run in Docker containers"
 

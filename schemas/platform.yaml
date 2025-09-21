@@ -1,0 +1,146 @@
+version: 1
+service:
+  name: "platform"
+  description: "BackSaas Platform Management API"
+
+entities:
+  tenants:
+    key: "tenant_id"
+    schema:
+      type: "object"
+      required: ["tenant_id", "name"]
+      properties:
+        tenant_id:
+          type: "string"
+          description: "Unique identifier for the tenant"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "Display name for the tenant"
+        domain:
+          type: "string"
+          format: "hostname"
+          description: "Custom domain for the tenant"
+        plan:
+          type: "string"
+          enum: ["free", "pro", "enterprise", "system"]
+          default: "free"
+          description: "Subscription plan"
+        status:
+          type: "string"
+          enum: ["active", "inactive", "suspended"]
+          default: "active"
+          description: "Current status of the tenant"
+        settings:
+          type: "object"
+          description: "Tenant-specific configuration settings"
+
+  users:
+    key: "user_id"
+    schema:
+      type: "object"
+      required: ["user_id", "email", "tenant_id"]
+      properties:
+        user_id:
+          type: "string"
+          description: "Unique identifier for the user"
+        tenant_id:
+          type: "string"
+          description: "Tenant this user belongs to"
+        email:
+          type: "string"
+          format: "email"
+          description: "User's email address"
+        first_name:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+          description: "User's first name"
+        last_name:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+          description: "User's last name"
+        role:
+          type: "string"
+          enum: ["platform_admin", "admin", "user"]
+          default: "user"
+          description: "User's role within the tenant"
+        status:
+          type: "string"
+          enum: ["active", "inactive", "pending"]
+          default: "pending"
+          description: "Current status of the user account"
+
+  schemas:
+    key: "schema_id"
+    schema:
+      type: "object"
+      required: ["schema_id", "tenant_id", "name", "schema_definition"]
+      properties:
+        schema_id:
+          type: "string"
+          description: "Unique identifier for the schema"
+        tenant_id:
+          type: "string"
+          description: "Tenant this schema belongs to"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "Name of the schema"
+        version:
+          type: "integer"
+          minimum: 1
+          default: 1
+          description: "Version number of the schema"
+        schema_definition:
+          type: "object"
+          description: "The actual schema definition in JSON format"
+        status:
+          type: "string"
+          enum: ["draft", "deployed", "deprecated"]
+          default: "draft"
+          description: "Current status of the schema"
+        deployed_at:
+          type: "string"
+          format: "date-time"
+          description: "When the schema was deployed"
+        created_by:
+          type: "string"
+          description: "User ID who created the schema"
+
+  api_keys:
+    key: "key_id"
+    schema:
+      type: "object"
+      required: ["key_id", "tenant_id", "user_id", "name"]
+      properties:
+        key_id:
+          type: "string"
+          description: "Unique identifier for the API key"
+        tenant_id:
+          type: "string"
+          description: "Tenant this API key belongs to"
+        user_id:
+          type: "string"
+          description: "User who owns this API key"
+        name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "Descriptive name for the API key"
+        permissions:
+          type: "array"
+          items:
+            type: "string"
+          description: "List of permissions granted to this API key"
+        expires_at:
+          type: "string"
+          format: "date-time"
+          description: "When the API key expires (null for no expiration)"
+        last_used:
+          type: "string"
+          format: "date-time"
+          description: "When the API key was last used"

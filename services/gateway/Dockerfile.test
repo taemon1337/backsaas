@@ -1,0 +1,23 @@
+# Test Dockerfile for Gateway Service
+FROM golang:1.23-alpine AS test
+
+# Install build dependencies and testing tools
+RUN apk add --no-cache git ca-certificates tzdata curl
+
+# Set working directory
+WORKDIR /app
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies (this will be cached unless go.mod/go.sum changes)
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build test binaries to verify everything compiles
+RUN go build -o /dev/null ./...
+
+# Run tests by default, but can be overridden
+CMD ["go", "test", "-v", "./..."]

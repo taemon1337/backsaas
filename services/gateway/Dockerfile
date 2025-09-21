@@ -1,5 +1,5 @@
 # Multi-stage build for BackSaas API Gateway
-FROM golang:1.21-alpine AS builder
+FROM golang:1.23-alpine AS builder
 
 # Install git for go mod operations
 RUN apk add --no-cache git

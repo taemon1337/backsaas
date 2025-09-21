@@ -59,13 +59,25 @@ func (d *DatabaseOperations) buildCreateTableSQL(entityName string, entity *sche
 	// Add tenant_id column for multi-tenancy
 	columns = append(columns, "tenant_id VARCHAR(255) NOT NULL")
 	
-	// Add columns for each property
-	for propName, propDef := range entity.Schema.Properties {
-		// Skip the key property as it's already added as primary key
-		if propName == entity.Key {
-			continue
+	// Add columns for each property in sorted order for consistency
+	var propNames []string
+	for propName := range entity.Schema.Properties {
+		if propName != entity.Key {
+			propNames = append(propNames, propName)
 		}
-		
+	}
+	
+	// Sort property names to ensure consistent ordering
+	for i := 0; i < len(propNames); i++ {
+		for j := i + 1; j < len(propNames); j++ {
+			if propNames[i] > propNames[j] {
+				propNames[i], propNames[j] = propNames[j], propNames[i]
+			}
+		}
+	}
+	
+	for _, propName := range propNames {
+		propDef := entity.Schema.Properties[propName]
 		columnDef := d.propertyToColumnDefinition(propName, propDef)
 		columns = append(columns, columnDef)
 	}
@@ -394,16 +406,29 @@ func (d *DatabaseOperations) rowsToMaps(rows *sql.Rows, entity *schema.Entity) (
 	return results, nil
 }
 
-// getEntityColumns returns the expected column names for an entity
+// getEntityColumns returns the expected column names for an entity in the same order as table creation
 func (d *DatabaseOperations) getEntityColumns(entity *schema.Entity) []string {
 	columns := []string{entity.Key, "tenant_id"}
 	
+	// Get property names in sorted order for consistency
+	var propNames []string
 	for propName := range entity.Schema.Properties {
 		if propName != entity.Key {
-			columns = append(columns, propName)
+			propNames = append(propNames, propName)
 		}
 	}
 	
+	// Sort property names to ensure consistent ordering
+	// This matches the order used in buildCreateTableSQL
+	for i := 0; i < len(propNames); i++ {
+		for j := i + 1; j < len(propNames); j++ {
+			if propNames[i] > propNames[j] {
+				propNames[i], propNames[j] = propNames[j], propNames[i]
+			}
+		}
+	}
+	
+	columns = append(columns, propNames...)
 	columns = append(columns, "created_at", "updated_at")
 	return columns
 }

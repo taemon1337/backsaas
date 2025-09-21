@@ -1,6 +1,6 @@
 module github.com/backsaas/backsaas/cmd/backsaas
 
-go 1.21
+go 1.23
 
 require (
 	github.com/fatih/color v1.16.0

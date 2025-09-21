@@ -7,8 +7,8 @@ import (
 	"time"
 	"bytes"
 	"encoding/json"
-
-	"github.com/backsaas/platform/api/internal/functions"
+	
+	"github.com/backsaas/platform/api/internal/types"
 )
 
 // EmailService interface for sending emails
@@ -22,7 +22,7 @@ type WebhookClient interface {
 }
 
 // SendEmail sends a templated email
-func SendEmail(ctx context.Context, execCtx *functions.ExecutionContext, template, to string, data map[string]interface{}) error {
+func SendEmail(ctx context.Context, execCtx *types.ExecutionContext, template, to string, data map[string]interface{}) error {
 	// Validate email address
 	if to == "" {
 		return fmt.Errorf("recipient email is required")
@@ -49,7 +49,7 @@ func SendEmail(ctx context.Context, execCtx *functions.ExecutionContext, templat
 	})
 	
 	// Publish email sent event
-	err := execCtx.EventService.Publish(ctx, "email.sent", map[string]interface{}{
+	err := execCtx.EventService.Publish("email.sent", map[string]interface{}{
 		"template":  template,
 		"to":        to,
 		"tenant_id": execCtx.TenantID,
@@ -66,7 +66,7 @@ func SendEmail(ctx context.Context, execCtx *functions.ExecutionContext, templat
 }
 
 // SendWebhook sends an HTTP webhook
-func SendWebhook(ctx context.Context, execCtx *functions.ExecutionContext, url string, payload map[string]interface{}, timeout time.Duration) error {
+func SendWebhook(ctx context.Context, execCtx *types.ExecutionContext, url string, payload map[string]interface{}, timeout time.Duration) error {
 	// Validate URL
 	if url == "" {
 		return fmt.Errorf("webhook URL is required")
@@ -133,7 +133,7 @@ func SendWebhook(ctx context.Context, execCtx *functions.ExecutionContext, url s
 	})
 	
 	// Publish webhook sent event
-	err = execCtx.EventService.Publish(ctx, "webhook.sent", map[string]interface{}{
+	err = execCtx.EventService.Publish("webhook.sent", map[string]interface{}{
 		"url":         url,
 		"status_code": resp.StatusCode,
 		"tenant_id":   execCtx.TenantID,

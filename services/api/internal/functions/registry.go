@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	
+	"github.com/backsaas/platform/api/internal/types"
 )
 
 // FunctionRegistry manages all available Go functions
@@ -34,21 +36,10 @@ type ParamDefinition struct {
 // ReturnDefinition describes function return type
 type ReturnDefinition struct {
 	Type string
+	// Add a new field to ReturnDefinition
+	Nullable bool
 }
 
-// ExecutionContext provides secure context for function execution
-type ExecutionContext struct {
-	TenantID  string
-	UserID    string
-	RequestID string
-	Entity    string
-	Operation string
-	
-	// Services
-	DataService  DataService
-	EventService EventService
-	Logger       Logger
-}
 
 // DataService provides secure, tenant-scoped data operations
 type DataService interface {
@@ -119,7 +110,7 @@ func (r *FunctionRegistry) Execute(
 	ctx context.Context,
 	functionName string,
 	params map[string]interface{},
-	execCtx *ExecutionContext,
+	execCtx *types.ExecutionContext,
 ) (interface{}, error) {
 	
 	// Get function definition
@@ -165,7 +156,7 @@ func (r *FunctionRegistry) validateParams(def *FunctionDefinition, params map[st
 func (r *FunctionRegistry) prepareArgs(
 	def *FunctionDefinition,
 	params map[string]interface{},
-	execCtx *ExecutionContext,
+	execCtx *types.ExecutionContext,
 ) ([]reflect.Value, error) {
 	
 	funcType := def.Handler.Type()

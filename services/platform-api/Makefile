@@ -21,7 +21,7 @@ GO_FILES=$(shell find . -name "*.go" -type f)
 # NOTE: Always run Go commands in Docker containers for consistency
 # Using full golang image (not alpine) to include git for go mod operations
 # Mount Go caches from host for faster builds and module downloads
-GO_IMAGE=golang:1.21
+GO_IMAGE=golang:1.23
 DOCKER_GO_RUN=docker run --rm \
 	-v $(PWD):/app \
 	-v $(HOME)/go/pkg/mod:/go/pkg/mod \
@@ -88,6 +88,44 @@ test-api: ## Run API engine tests in Docker container (requires TEST_DATABASE_UR
 	else \
 		$(DOCKER_GO_RUN) sh -c "TEST_DATABASE_URL='$(TEST_DATABASE_URL)' go test -v ./internal/api/..."; \
 	fi
+
+test-docker: ## Run tests using Docker Compose network
+	@echo "🧪 Running tests within Docker Compose network..."
+	@echo "📋 Building and starting test runner service..."
+	@cd ../.. && docker compose --profile test build test-runner
+	@cd ../.. && docker compose --profile test up -d test-runner
+	@echo "🔬 Executing database tests..."
+	@cd ../.. && docker compose exec test-runner go test -v ./internal/api/... -run="TestDatabaseOperations|TestFieldMappingConsistency|TestCRMSchemaFieldMapping"
+	@echo "🧹 Cleaning up test runner..."
+	@cd ../.. && docker compose --profile test down
+
+test-docker-all: ## Run all tests using Docker Compose network
+	@echo "🧪 Running all tests within Docker Compose network..."
+	@echo "📋 Building and starting test runner service..."
+	@cd ../.. && docker compose --profile test build test-runner
+	@cd ../.. && docker compose --profile test up -d test-runner
+	@echo "🔬 Executing all tests..."
+	@cd ../.. && docker compose exec test-runner go test -v ./...
+	@echo "🧹 Cleaning up test runner..."
+	@cd ../.. && docker compose --profile test down
+
+test-field-mapping: ## Run specific field mapping tests
+	@echo "🧪 Running field mapping tests..."
+	@cd ../.. && docker compose --profile test build test-runner
+	@cd ../.. && docker compose --profile test up -d test-runner
+	@echo "🔬 Executing field mapping tests..."
+	@cd ../.. && docker compose exec test-runner go test -v ./internal/api/... -run="FieldMapping"
+	@echo "🧹 Cleaning up test runner..."
+	@cd ../.. && docker compose --profile test down
+
+test-integration: ## Run integration tests
+	@echo "🧪 Running integration tests..."
+	@cd ../.. && docker compose --profile test build test-runner
+	@cd ../.. && docker compose --profile test up -d test-runner
+	@echo "🔬 Executing integration tests..."
+	@cd ../.. && docker compose exec test-runner go test -v ./tests/integration/...
+	@echo "🧹 Cleaning up test runner..."
+	@cd ../.. && docker compose --profile test down
 
 # Run targets
 run: build ## Build and run with test schema

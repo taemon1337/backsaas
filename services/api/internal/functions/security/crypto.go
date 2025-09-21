@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"golang.org/x/crypto/bcrypt"
-	"github.com/backsaas/platform/api/internal/functions"
+	"github.com/backsaas/platform/api/internal/types"
 )
 
 // HashPassword securely hashes a password using bcrypt
-func HashPassword(ctx context.Context, execCtx *functions.ExecutionContext, password string) (string, error) {
+func HashPassword(ctx context.Context, execCtx *types.ExecutionContext, password string) (string, error) {
 	// Use bcrypt with cost 12 for good security/performance balance
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
@@ -31,7 +31,7 @@ func HashPassword(ctx context.Context, execCtx *functions.ExecutionContext, pass
 }
 
 // GenerateAPIKey generates a cryptographically secure API key
-func GenerateAPIKey(ctx context.Context, execCtx *functions.ExecutionContext, prefix string, length int) (string, error) {
+func GenerateAPIKey(ctx context.Context, execCtx *types.ExecutionContext, prefix string, length int) (string, error) {
 	// Generate random bytes
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
@@ -61,7 +61,7 @@ func GenerateAPIKey(ctx context.Context, execCtx *functions.ExecutionContext, pr
 }
 
 // GenerateSlug creates a URL-safe slug from text
-func GenerateSlug(ctx context.Context, execCtx *functions.ExecutionContext, text string, maxLength int, reservedWords []string, checkUniqueness bool) (string, error) {
+func GenerateSlug(ctx context.Context, execCtx *types.ExecutionContext, text string, maxLength int, reservedWords []string, checkUniqueness bool) (string, error) {
 	// Convert to lowercase
 	slug := strings.ToLower(text)
 	

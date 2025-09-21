@@ -1,0 +1,243 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: backsaas-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: backsaas
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/01-init-db.sql
+      - ./scripts/seed-data.sql:/docker-entrypoint-initdb.d/02-seed-data.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d backsaas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backsaas-network
+
+  # Redis for caching and sessions
+  redis:
+    image: redis:7-alpine
+    container_name: backsaas-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backsaas-network
+
+  # Platform API Service
+  platform-api:
+    build:
+      context: ./services/platform-api
+      dockerfile: Dockerfile
+    container_name: backsaas-platform-api
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/backsaas?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - PORT=8080
+      - TENANT_ID=system
+      - SCHEMA_SOURCE=file
+      - SCHEMA_PATH=/app/schemas/platform.yaml
+      - LOG_LEVEL=debug
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./schemas:/app/schemas:ro
+      - ./services/platform-api/testdata:/app/testdata:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - backsaas-network
+    restart: unless-stopped
+
+  # API Gateway Service (disabled until implemented)
+  # api-gateway:
+  #   build:
+  #     context: ./services/api-gateway
+  #     dockerfile: Dockerfile
+  #   container_name: backsaas-api-gateway
+  #   environment:
+  #     - PLATFORM_API_URL=http://platform-api:8080
+  #     - REDIS_URL=redis://redis:6379
+  #     - PORT=8000
+  #     - JWT_SECRET=your-jwt-secret-key-change-in-production
+  #     - LOG_LEVEL=debug
+  #   ports:
+  #     - "8000:8000"
+  #   depends_on:
+  #     platform-api:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #   networks:
+  #     - backsaas-network
+  #   restart: unless-stopped
+
+  # Test Tenant API (for testing multi-tenant setup)
+  test-tenant-api:
+    build:
+      context: ./services/platform-api
+      dockerfile: Dockerfile
+    container_name: backsaas-test-tenant-api
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/backsaas?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - PORT=8081
+      - TENANT_ID=test-tenant
+      - SCHEMA_SOURCE=file
+      - SCHEMA_PATH=/app/testdata/sample-crm.yaml
+      - LOG_LEVEL=debug
+    ports:
+      - "8081:8081"
+    volumes:
+      - ./services/platform-api/testdata:/app/testdata:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - backsaas-network
+    restart: unless-stopped
+
+  # Adminer for database management (development only)
+  adminer:
+    image: adminer:4.8.1
+    container_name: backsaas-adminer
+    ports:
+      - "8082:8080"
+    environment:
+      - ADMINER_DEFAULT_SERVER=postgres
+    depends_on:
+      - postgres
+    networks:
+      - backsaas-network
+    profiles:
+      - dev
+
+  # Prometheus for metrics (optional)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: backsaas-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - backsaas-network
+    profiles:
+      - monitoring
+
+  # Grafana for dashboards (optional)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: backsaas-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - backsaas-network
+    profiles:
+      - monitoring
+
+  # Test runner service for running tests within the Docker network
+  test-runner:
+    build:
+      context: ./services/platform-api
+      dockerfile: Dockerfile.test
+    container_name: backsaas-test-runner
+    environment:
+      - TEST_DATABASE_URL=postgres://postgres:postgres@postgres:5432/backsaas?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backsaas-network
+    profiles:
+      - test
+    command: ["sleep", "infinity"]  # Keep container running for exec commands
+
+  # Simple test API to verify field mapping fix
+  test-api:
+    image: golang:1.21-alpine
+    container_name: backsaas-test-api
+    working_dir: /app
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/backsaas?sslmode=disable
+      - PORT=8090
+    ports:
+      - "8090:8090"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backsaas-network
+    profiles:
+      - test
+    command: ["sh", "-c", "cd /app && go mod init test && go mod tidy && go run test-api-server.go"]
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  backsaas-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

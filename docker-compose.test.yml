@@ -1,0 +1,236 @@
+# BackSaaS Comprehensive Testing Environment
+# This compose file extends the main docker-compose.yml for testing
+version: '3.8'
+
+services:
+  # Test Database - isolated from development data
+  test-postgres:
+    image: postgres:15-alpine
+    container_name: backsaas-test-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: backsaas_test
+    ports:
+      - "5433:5432"  # Different port to avoid conflicts
+    volumes:
+      - test_postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-test-db.sql:/docker-entrypoint-initdb.d/01-init-test-db.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d backsaas_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backsaas-test-network
+
+  # Test Redis - isolated from development data
+  test-redis:
+    image: redis:7-alpine
+    container_name: backsaas-test-redis
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes:
+      - test_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backsaas-test-network
+
+  # Platform API Test Runner
+  platform-api-tests:
+    build:
+      context: ./services/platform-api
+      dockerfile: Dockerfile.test
+    container_name: backsaas-platform-api-tests
+    environment:
+      - TEST_DATABASE_URL=postgres://postgres:postgres@test-postgres:5432/backsaas_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379
+      - GO_ENV=test
+      - LOG_LEVEL=debug
+    volumes:
+      - ./services/platform-api:/app
+      - ./test-results:/test-results
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    networks:
+      - backsaas-test-network
+    command: ["sleep", "infinity"]  # Keep running for exec commands
+
+  # Gateway Test Runner
+  gateway-tests:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile.test
+    container_name: backsaas-gateway-tests
+    environment:
+      - TEST_DATABASE_URL=postgres://postgres:postgres@test-postgres:5432/backsaas_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379
+      - PLATFORM_API_URL=http://platform-api-tests:8080
+      - GO_ENV=test
+      - LOG_LEVEL=debug
+    volumes:
+      - ./services/gateway:/app
+      - ./test-results:/test-results
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    networks:
+      - backsaas-test-network
+    command: ["sleep", "infinity"]
+
+  # API Test Runner (for the other API service)
+  api-tests:
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile.test
+    container_name: backsaas-api-tests
+    environment:
+      - CONTROL_PLANE_DSN=postgres://postgres:postgres@test-postgres:5432/backsaas_test?sslmode=disable
+      - PUBSUB_REDIS_URL=redis://test-redis:6379
+      - GO_ENV=test
+      - LOG_LEVEL=debug
+    volumes:
+      - ./services/api:/app
+      - ./test-results:/test-results
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    networks:
+      - backsaas-test-network
+    command: ["sleep", "infinity"]
+
+  # CLI Test Runner - now part of the network
+  cli-tests:
+    build:
+      context: ./cmd/backsaas
+      dockerfile: Dockerfile.test
+    container_name: backsaas-cli-tests
+    environment:
+      - BACKSAAS_GATEWAY_URL=http://platform-api-tests:8080
+      - BACKSAAS_PLATFORM_URL=http://platform-api-tests:8080
+      - TEST_DATABASE_URL=postgres://postgres:postgres@test-postgres:5432/backsaas_test?sslmode=disable
+      - GO_ENV=test
+    volumes:
+      - ./cmd/backsaas:/app
+      - ./test-results:/test-results
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      platform-api-tests:
+        condition: service_started
+    networks:
+      - backsaas-test-network
+    command: ["sleep", "infinity"]
+
+  # CLI E2E Test Runner - runs comprehensive platform tests
+  cli-e2e-tests:
+    build:
+      context: ./cmd/backsaas
+      dockerfile: Dockerfile.test
+    container_name: backsaas-cli-e2e-tests
+    environment:
+      - BACKSAAS_GATEWAY_URL=http://platform-api-tests:8080
+      - BACKSAAS_PLATFORM_URL=http://platform-api-tests:8080
+      - TEST_DATABASE_URL=postgres://postgres:postgres@test-postgres:5432/backsaas_test?sslmode=disable
+      - GO_ENV=test
+    volumes:
+      - ./cmd/backsaas:/app
+      - ./test-results:/test-results
+      - ./schemas:/app/schemas:ro
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      platform-api-tests:
+        condition: service_started
+    networks:
+      - backsaas-test-network
+    profiles:
+      - e2e
+    command: ["sh", "-c", "cd /app && go build -o backsaas . && ./backsaas test platform --timeout=10m --cleanup=true --verbose=true"]
+
+  # Test Orchestrator - coordinates all tests
+  test-orchestrator:
+    image: golang:1.23-alpine
+    container_name: backsaas-test-orchestrator
+    working_dir: /workspace
+    environment:
+      - TEST_DATABASE_URL=postgres://postgres:postgres@test-postgres:5432/backsaas_test?sslmode=disable
+      - REDIS_URL=redis://test-redis:6379
+    volumes:
+      - .:/workspace
+      - ./test-results:/test-results
+      - ./scripts/test-orchestrator.sh:/test-orchestrator.sh
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+      platform-api-tests:
+        condition: service_started
+      gateway-tests:
+        condition: service_started
+      api-tests:
+        condition: service_started
+      cli-tests:
+        condition: service_started
+    networks:
+      - backsaas-test-network
+    command: ["sh", "/test-orchestrator.sh"]
+
+  # Test Results Server - serves test reports
+  test-results-server:
+    image: nginx:alpine
+    container_name: backsaas-test-results
+    ports:
+      - "8888:80"
+    volumes:
+      - ./test-results:/usr/share/nginx/html:ro
+      - ./scripts/nginx-test-results.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - backsaas-test-network
+    profiles:
+      - test-results
+
+volumes:
+  test_postgres_data:
+    driver: local
+  test_redis_data:
+    driver: local
+  go_mod_cache:
+    driver: local
+  go_build_cache:
+    driver: local
+
+networks:
+  backsaas-test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

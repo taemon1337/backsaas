@@ -27,13 +27,16 @@ This CLI provides commands for:
 - Monitoring system health with real-time dashboard
 - Bootstrapping the platform
 - Debugging and troubleshooting
+- Comprehensive end-to-end platform testing
 
 Examples:
   backsaas dashboard                       # Real-time platform monitoring
   backsaas health check                    # Check all services
   backsaas tenant create acme-corp         # Create a new tenant
   backsaas schema validate ./schema.yaml   # Validate a schema file
-  backsaas bootstrap --admin-email=admin@example.com  # Bootstrap platform`,
+  backsaas bootstrap --admin-email=admin@example.com  # Bootstrap platform
+  backsaas test platform                   # Run comprehensive platform tests
+  backsaas test tenant-lifecycle           # Test complete tenant lifecycle`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
