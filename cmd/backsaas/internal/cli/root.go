@@ -24,11 +24,12 @@ var rootCmd = &cobra.Command{
 This CLI provides commands for:
 - Managing tenants and users
 - Validating and deploying schemas
-- Monitoring system health
+- Monitoring system health with real-time dashboard
 - Bootstrapping the platform
 - Debugging and troubleshooting
 
 Examples:
+  backsaas dashboard                       # Real-time platform monitoring
   backsaas health check                    # Check all services
   backsaas tenant create acme-corp         # Create a new tenant
   backsaas schema validate ./schema.yaml   # Validate a schema file
@@ -56,6 +57,7 @@ func init() {
 
 	// Add subcommands
 	rootCmd.AddCommand(healthCmd)
+	rootCmd.AddCommand(dashboardCmd)
 	rootCmd.AddCommand(bootstrapCmd)
 	rootCmd.AddCommand(tenantCmd)
 	rootCmd.AddCommand(schemaCmd)

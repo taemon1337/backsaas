@@ -58,6 +58,11 @@ backsaas tenant create "My Company"
 ### System Management
 
 ```bash
+# Real-time monitoring dashboard
+backsaas dashboard                       # Live platform dashboard (like 'top')
+backsaas dashboard --refresh=5           # Custom refresh interval
+backsaas dashboard --compact             # Compact display mode
+
 # Health monitoring
 backsaas health check                    # Check all services
 backsaas health check --service=gateway  # Check specific service
@@ -412,6 +417,54 @@ backsaas tenant list
 backsaas user list --all-tenants
 ```
 
+## 📊 Real-Time Dashboard
+
+The CLI includes a powerful real-time dashboard similar to the `top` command but designed for BackSaas platform monitoring.
+
+### Dashboard Features
+
+```bash
+# Start the dashboard
+backsaas dashboard
+
+# Custom refresh rate
+backsaas dashboard --refresh=5
+
+# Compact mode for smaller terminals
+backsaas dashboard --compact
+```
+
+### Dashboard Sections
+
+#### 🏥 Service Health
+- Real-time health status of all services
+- Response times and error indicators
+- Overall system health summary
+
+#### 💻 System Stats
+- Platform uptime and version info
+- Memory and CPU usage
+- Active connection count
+- Environment information
+
+#### 🏢 Tenant Stats
+- Active vs total tenants and users
+- Schema deployment count
+- Recent activity feed
+
+#### 📊 Request Stats
+- Requests per second (RPS)
+- Average response times
+- Error rates with color coding
+- Top API endpoints by usage
+
+### Dashboard Controls
+
+- **Ctrl+C**: Exit dashboard
+- **--refresh**: Set update interval (default: 2 seconds)
+- **--compact**: Reduce information density
+- **Auto-refresh**: Continuously updates without user input
+
 ### Troubleshooting
 
 ```bash
@@ -423,6 +476,9 @@ backsaas tenant show problematic-tenant
 
 # Verify schema deployment
 backsaas schema list --tenant=problematic-tenant
+
+# Monitor in real-time
+backsaas dashboard --refresh=1
 ```
 
-This CLI provides a comprehensive interface for managing the BackSaas platform, enabling efficient administration, monitoring, and troubleshooting workflows.
+This CLI provides a comprehensive interface for managing the BackSaas platform, enabling efficient administration, monitoring, and troubleshooting workflows with real-time visibility.
