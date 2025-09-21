@@ -70,10 +70,74 @@ monitoring:
 
 # Route definitions
 routes:
+  # Admin Console UI - platform management interface
+  - description: "Admin Console UI"
+    host: "admin.backsaas.dev"
+    path_prefix: "/"
+    backend:
+      url: "http://localhost:3000"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/api/health"
+    auth:
+      enabled: true
+      required: true
+      required_roles: ["platform_admin", "support_admin", "billing_admin"]
+    rate_limit:
+      enabled: true
+      requests_per_minute: 300
+      burst_size: 60
+    transform:
+      add_headers:
+        X-Interface-Type: "admin-console"
+    enabled: true
+
+  # Tenant UI - business interface
+  - description: "Tenant UI"
+    host: "*.backsaas.dev"
+    path_prefix: "/"
+    backend:
+      url: "http://localhost:3001"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/api/health"
+    auth:
+      enabled: true
+      required: true
+    rate_limit:
+      enabled: true
+      requests_per_minute: 500
+      burst_size: 100
+    transform:
+      add_headers:
+        X-Interface-Type: "tenant-ui"
+    enabled: true
+
+  # Tenant UI (path-based routing alternative)
+  - description: "Tenant UI Path-based"
+    path_prefix: "/app"
+    backend:
+      url: "http://localhost:3001"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/api/health"
+    auth:
+      enabled: true
+      required: true
+    rate_limit:
+      enabled: true
+      requests_per_minute: 500
+      burst_size: 100
+    transform:
+      add_headers:
+        X-Interface-Type: "tenant-ui"
+      rewrite_path: "/"
+    enabled: true
+
   # Platform API (system tenant) - manages tenants, schemas, etc.
   - description: "Platform Management API"
     tenant_id: "system"
-    path_prefix: "/platform"
+    path_prefix: "/api/platform"
     backend:
       url: "http://localhost:8080"
       timeout: "30s"
@@ -89,7 +153,7 @@ routes:
       burst_size: 50
     enabled: true
 
-  # Tenant API routing by subdomain (tenant.api.example.com)
+  # Tenant API routing by subdomain (tenant.api.backsaas.dev)
   - description: "Tenant API by Subdomain"
     host: "*.api.backsaas.dev"
     path_prefix: "/api"
@@ -100,7 +164,7 @@ routes:
       health_check_path: "/health"
     transform:
       add_headers:
-        X-Gateway-Route: "tenant-subdomain"
+        X-Gateway-Route: "tenant-api-subdomain"
     auth:
       enabled: true
       required: true
@@ -110,9 +174,9 @@ routes:
       burst_size: 60
     enabled: true
 
-  # Tenant API routing by path (/tenant/{tenant-id}/api/...)
+  # Tenant API routing by path (/api/tenants/{tenant-id}/...)
   - description: "Tenant API by Path"
-    path_prefix: "/tenant/"
+    path_prefix: "/api/tenants/"
     backend:
       url: "http://localhost:8081"
       timeout: "30s"
@@ -120,8 +184,7 @@ routes:
       health_check_path: "/health"
     transform:
       add_headers:
-        X-Gateway-Route: "tenant-path"
-      rewrite_path: "/api"  # Remove /tenant/{id} prefix
+        X-Gateway-Route: "tenant-api-path"
     auth:
       enabled: true
       required: true

@@ -26,26 +26,52 @@
 - [ ] **Expression language**: Simple expressions for computed fields and conditions
 - [ ] **Tenant configuration**: YAML-based function configuration per tenant
 
-## M0.7: Multi-Service Architecture 🚧
-- [x] **Architecture documentation**: Service separation design completed
+## M0.7: Multi-Service Architecture ✅
+- [x] **Architecture documentation**: Service separation design completed with dual UI architecture
 - [x] **Generic schema-driven API engine**: Loads any schema (platform.yaml or tenant schemas)
 - [x] **Platform API service structure**: Complete service with main.go, tests, Makefile
+- [x] **API Gateway service**: Complete with routing, auth, rate limiting, monitoring
 - [x] **Comprehensive test suite**: Schema loader tests, function tests, integration tests
 - [x] **Function system tests**: All predefined Go functions tested (validation, security, communication)
-- [ ] **API Gateway service**: Central routing, auth, rate limiting
+- [x] **Gateway test suite**: Routing, auth, rate limiting, proxy tests
+- [x] **Docker-first development**: All services containerized with cache optimization
 - [ ] **Database operations implementation**: Complete CRUD operations with tenant scoping
 - [ ] **Function execution integration**: Hook triggers, validation, computed fields
 - [ ] **Service communication**: Inter-service communication patterns
 - [ ] **Docker compose update**: Multi-service development environment
 
-## M1: Event Infrastructure
+## M1: User Interfaces & Authentication
+- [ ] **Admin Console UI**: Platform management interface (apps/admin-console)
+  - [ ] Next.js 14 setup with TypeScript and Tailwind CSS
+  - [ ] Tenant CRUD operations interface
+  - [ ] Schema designer and management
+  - [ ] System monitoring dashboard
+  - [ ] User management across tenants
+  - [ ] Analytics and billing interface
+- [ ] **Tenant UI**: Business workflow interface (apps/tenant-ui)
+  - [ ] Next.js 14 setup with dynamic theming
+  - [ ] Schema-driven form generation
+  - [ ] Custom dashboards and reports
+  - [ ] Tenant-specific branding system
+  - [ ] User management within tenant
+- [ ] **Authentication Service**: JWT token management
+  - [ ] User registration and login
+  - [ ] Role-based access control
+  - [ ] Token refresh and validation
+  - [ ] Multi-tenant user isolation
+- [ ] **Gateway Integration**: Connect UIs to backend services
+  - [ ] Admin Console → Platform API routing
+  - [ ] Tenant UI → Tenant API routing
+  - [ ] Authentication flow integration
+
+## M2: Event Infrastructure
 - [ ] **Redis Streams setup**: Configure streams for schema events
 - [ ] **Postgres LISTEN/NOTIFY**: Setup event publishing from registry
 - [ ] **Event schema definitions**: Define event types and payloads
 - [ ] **Basic event publisher**: Registry publishes schema events
 - [ ] **Basic event subscriber**: API service subscribes to events
 
-## M2: Schema Registry Core
+## M3: Schema Registry Core
 - [ ] **System schema bootstrap**: Parse and migrate system tables
 - [ ] **Registry CRUD API**: Tenants, schemas, migrations endpoints
 - [ ] **Schema validation**: JSON Schema validation on create/update

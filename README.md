@@ -1,18 +1,23 @@
 # BackSaas — Backend Schema-Driven Data API Platform
 
-A platform that turns **declarative schemas** into a **policy‑enforced, multi‑tenant data API**.
+A platform that turns **declarative schemas** into a **policy‑enforced, multi‑tenant data API** with dedicated admin and tenant interfaces.
 
-- **Control Plane UI**: Next.js + shadcn/ui for schema/policy design, migration planning, and tenant ops.
-- **Data Plane API**: Go server that hot‑reloads tenant schemas from a central registry (Postgres) and serves a best‑practice REST API to pluggable backends.
-- **Migrator**: Go worker that performs expand/backfill/contract database migrations in response to schema updates.
+- **Admin Console**: Next.js platform management UI for tenant administration, schema design, and system monitoring
+- **Tenant UI**: Next.js business interface with schema-driven forms, custom branding, and tenant-specific workflows
+- **API Gateway**: Go service for routing, authentication, rate limiting, and request proxying
+- **Platform API**: Go server managing platform operations using self-hosted schema (tenant_id: "system")
+- **Tenant APIs**: Go servers that hot‑reload tenant schemas from registry and serve tenant-specific REST APIs
+- **Migrator**: Go worker that performs expand/backfill/contract database migrations in response to schema updates
 
 ## Quickstart (Docker)
 
 ```bash
 cp .env.example .env
 docker compose up --build
-# UI: http://localhost:3000
-# API: http://localhost:8080
+# Admin Console: http://admin.localhost:3000
+# Tenant UI: http://tenant.localhost:3001  
+# API Gateway: http://localhost:8000
+# Platform API: http://localhost:8080
 # Postgres: localhost:5432 (postgres/postgres) DB: backsaas
 # Redis: localhost:6379
 ```
@@ -20,9 +25,17 @@ See per‑folder **README.md** files for details.
 
 ## Monorepo Layout
 
-- `apps/web` — Next.js control‑plane UI
-- `services/api` — Go data‑plane API server
+### User Interfaces
+- `apps/admin-console` — Next.js platform management UI (admin.backsaas.dev)
+- `apps/tenant-ui` — Next.js business interface UI ({tenant}.backsaas.dev)
+
+### Backend Services  
+- `services/gateway` — Go API gateway (routing, auth, rate limiting)
+- `services/platform-api` — Go platform management API (tenant_id: "system")
+- `services/tenant-api` — Go tenant-specific data APIs (dynamic tenant_id)
 - `services/migrator` — Go migration worker
+
+### Shared Packages
 - `packages/ui` — shadcn‑based design system
 - `packages/sdk` — generated OpenAPI client (placeholder)
 - `packages/config` — shared configs
