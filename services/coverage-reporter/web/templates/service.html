@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{.service}} - BackSaaS Coverage Reporter</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <div class="flex items-center">
+                    <a href="/" class="text-blue-600 hover:text-blue-800 mr-4">← Back</a>
+                    <h1 class="text-2xl font-bold text-gray-900">{{.service}} Coverage Details</h1>
+                </div>
+                <div class="flex space-x-2">
+                    <button onclick="collectService('{{.service}}')" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">
+                        🔄 Refresh Coverage
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="max-w-7xl mx-auto px-4 py-8">
+        <!-- Service Overview -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-sm text-gray-500">Overall Coverage</p>
+                <p class="text-3xl font-bold {{if ge .coverage.Overall 80}}text-green-600{{else if ge .coverage.Overall 60}}text-yellow-600{{else}}text-red-600{{end}}">
+                    {{printf "%.1f" .coverage.Overall}}%
+                </p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-sm text-gray-500">Lines Covered</p>
+                <p class="text-2xl font-bold text-gray-900">{{.coverage.CoveredLines}}</p>
+                <p class="text-sm text-gray-500">of {{.coverage.Lines}} total</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-sm text-gray-500">Packages</p>
+                <p class="text-2xl font-bold text-gray-900">{{len .coverage.Packages}}</p>
+            </div>
+            <div class="bg-white rounded-lg shadow p-6">
+                <p class="text-sm text-gray-500">Last Updated</p>
+                <p class="text-sm text-gray-900">{{.coverage.Timestamp.Format "Jan 2, 2006"}}</p>
+                <p class="text-xs text-gray-500">{{.coverage.Timestamp.Format "15:04:05"}}</p>
+            </div>
+        </div>
+
+        <!-- Coverage Progress Bar -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Coverage Progress</h3>
+            <div class="w-full bg-gray-200 rounded-full h-4">
+                <div class="h-4 rounded-full {{if ge .coverage.Overall 80}}bg-green-500{{else if ge .coverage.Overall 60}}bg-yellow-500{{else}}bg-red-500{{end}}" 
+                     style="width: {{.coverage.Overall}}%"></div>
+            </div>
+            <div class="flex justify-between text-sm text-gray-600 mt-2">
+                <span>0%</span>
+                <span class="font-medium">{{printf "%.1f" .coverage.Overall}}%</span>
+                <span>100%</span>
+            </div>
+        </div>
+
+        <!-- Package Breakdown -->
+        {{if .coverage.Packages}}
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Package Coverage</h3>
+            <div class="space-y-4">
+                {{range $pkg, $pkgCoverage := .coverage.Packages}}
+                <div class="flex items-center justify-between">
+                    <div class="flex-1">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-gray-900">{{$pkg}}</span>
+                            <span class="text-sm {{if ge $pkgCoverage 80}}text-green-600{{else if ge $pkgCoverage 60}}text-yellow-600{{else}}text-red-600{{end}}">
+                                {{printf "%.1f" $pkgCoverage}}%
+                            </span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2">
+                            <div class="h-2 rounded-full {{if ge $pkgCoverage 80}}bg-green-500{{else if ge $pkgCoverage 60}}bg-yellow-500{{else}}bg-red-500{{end}}" 
+                                 style="width: {{$pkgCoverage}}%"></div>
+                        </div>
+                    </div>
+                </div>
+                {{end}}
+            </div>
+        </div>
+        {{end}}
+
+        <!-- Coverage History Chart -->
+        {{if gt (len .history) 1}}
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Coverage Trend</h3>
+            <canvas id="historyChart" width="400" height="200"></canvas>
+        </div>
+        {{end}}
+
+        <!-- Test Results -->
+        {{if .coverage.TestResults}}
+        <div class="bg-white rounded-lg shadow p-6">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">Test Results</h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                {{if gt .coverage.TestResults.Passed 0}}
+                <div class="text-center p-4 bg-green-50 rounded-lg">
+                    <p class="text-2xl font-bold text-green-600">{{.coverage.TestResults.Passed}}</p>
+                    <p class="text-sm text-green-800">Tests Passed</p>
+                </div>
+                {{end}}
+                {{if gt .coverage.TestResults.Failed 0}}
+                <div class="text-center p-4 bg-red-50 rounded-lg">
+                    <p class="text-2xl font-bold text-red-600">{{.coverage.TestResults.Failed}}</p>
+                    <p class="text-sm text-red-800">Tests Failed</p>
+                </div>
+                {{end}}
+                {{if gt .coverage.TestResults.Skipped 0}}
+                <div class="text-center p-4 bg-yellow-50 rounded-lg">
+                    <p class="text-2xl font-bold text-yellow-600">{{.coverage.TestResults.Skipped}}</p>
+                    <p class="text-sm text-yellow-800">Tests Skipped</p>
+                </div>
+                {{end}}
+            </div>
+            <div class="text-sm text-gray-600">
+                <p>Duration: {{.coverage.TestResults.Duration}}</p>
+            </div>
+        </div>
+        {{end}}
+    </div>
+
+    <script>
+        // Coverage history chart
+        {{if gt (len .history) 1}}
+        const ctx = document.getElementById('historyChart').getContext('2d');
+        const historyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [{{range .history}}'{{.Timestamp.Format "Jan 2 15:04"}}',{{end}}],
+                datasets: [{
+                    label: 'Coverage %',
+                    data: [{{range .history}}{{.Overall}},{{end}}],
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 100,
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        {{end}}
+
+        async function collectService(serviceName) {
+            try {
+                const response = await fetch(`/api/collect/${serviceName}`, { method: 'POST' });
+                const data = await response.json();
+                alert(data.message);
+                setTimeout(() => location.reload(), 2000);
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq" // PostgreSQL driver
@@ -35,7 +36,12 @@ func NewEngine(config *Config) (*Engine, error) {
 	var schemaObj *schema.Schema
 	var err error
 	
-	loader := schema.NewLoader(".")
+	// Use empty basePath for absolute paths, current directory for relative paths
+	basePath := "."
+	if filepath.IsAbs(config.SchemaPath) {
+		basePath = ""
+	}
+	loader := schema.NewLoader(basePath)
 	
 	switch config.SchemaSource {
 	case "file":

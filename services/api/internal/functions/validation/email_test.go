@@ -2,10 +2,8 @@ package validation
 
 import (
 	"context"
-	"strings"
 	"testing"
 
-	"golang.org/x/crypto/bcrypt"
 	"github.com/backsaas/platform/api/internal/types"
 )
 
@@ -49,12 +47,16 @@ func (m *MockDataService) Count(ctx context.Context, entity string, filters map[
 	return 0, nil
 }
 
+func (m *MockDataService) List(ctx context.Context, entity string, filters map[string]interface{}) ([]map[string]interface{}, error) {
+	return []map[string]interface{}{}, nil
+}
+
 // MockEventService for testing
 type MockEventService struct {
 	publishedEvents []string
 }
 
-func (m *MockEventService) Publish(ctx context.Context, event string, data map[string]interface{}) error {
+func (m *MockEventService) Publish(event string, data map[string]interface{}) error {
 	m.publishedEvents = append(m.publishedEvents, event)
 	return nil
 }

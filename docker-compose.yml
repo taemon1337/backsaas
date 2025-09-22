@@ -66,37 +66,40 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 40s
     networks:
       - backsaas-network
     restart: unless-stopped
 
-  # API Gateway Service (disabled until implemented)
-  # api-gateway:
-  #   build:
-  #     context: ./services/api-gateway
-  #     dockerfile: Dockerfile
-  #   container_name: backsaas-api-gateway
-  #   environment:
-  #     - PLATFORM_API_URL=http://platform-api:8080
-  #     - REDIS_URL=redis://redis:6379
-  #     - PORT=8000
-  #     - JWT_SECRET=your-jwt-secret-key-change-in-production
-  #     - LOG_LEVEL=debug
-  #   ports:
-  #     - "8000:8000"
-  #   depends_on:
-  #     platform-api:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #   networks:
-  #     - backsaas-network
-  #   restart: unless-stopped
+  # API Gateway Service
+  gateway:
+    build:
+      context: ./services/gateway
+      dockerfile: Dockerfile
+    container_name: backsaas-gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key}
+      - PLATFORM_API_URL=http://platform-api:8080
+      - API_SERVICE_URL=http://api:8080
+      - ENVIRONMENT=development
+    depends_on:
+      redis:
+        condition: service_healthy
+      platform-api:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - backsaas-network
 
   # Test Tenant API (for testing multi-tenant setup)
   test-tenant-api:

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BackSaaS Service Health Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-full mx-auto px-6 py-4">
+            <h1 class="text-2xl font-bold text-gray-900">🏥 BackSaaS Service Health Dashboard</h1>
+            <p class="text-sm text-gray-600">Unified system monitoring</p>
+        </div>
+    </header>
+
+    <div class="max-w-full mx-auto px-6 py-6">
+        <!-- Summary -->
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="grid grid-cols-4 gap-4 text-center">
+                <div><p class="text-sm text-gray-500">Coverage</p><p class="text-xl font-bold text-blue-600">{{printf "%.1f" .summary.OverallCoverage}}%</p></div>
+                <div><p class="text-sm text-gray-500">Lines</p><p class="text-xl font-bold">{{.summary.TotalLines}}</p></div>
+                <div><p class="text-sm text-gray-500">Tests</p><p class="text-xl font-bold text-green-600">{{.summary.TestsPassed}}</p></div>
+                <div id="e2e-summary"><p class="text-sm text-gray-500">E2E</p><p class="text-xl font-bold text-gray-400">Loading...</p></div>
+            </div>
+        </div>
+
+        <!-- Unified Table -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="px-6 py-4 border-b bg-gray-50">
+                <h2 class="text-lg font-semibold">🔍 System Health Overview</h2>
+            </div>
+            <table class="min-w-full">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Component</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Coverage</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tests</th>
+                    </tr>
+                </thead>
+                <tbody id="health-table-body" class="divide-y divide-gray-200">
+                    <!-- E2E Row -->
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center">
+                                <span class="text-2xl mr-3">🎯</span>
+                                <div>
+                                    <div class="text-sm font-medium">E2E Integration Tests</div>
+                                    <div class="text-sm text-gray-500">Platform validation</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4"><span class="px-2 py-1 text-xs bg-purple-100 text-purple-800 rounded">Integration</span></td>
+                        <td class="px-6 py-4" id="e2e-status"><span class="px-2 py-1 text-xs bg-gray-100 rounded">Loading...</span></td>
+                        <td class="px-6 py-4 text-sm text-gray-500">N/A</td>
+                        <td class="px-6 py-4" id="e2e-tests">Loading...</td>
+                    </tr>
+                    <!-- Services populated by JS -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        fetch('/api/integration-tests').then(r => r.json()).then(data => {
+            const status = data.status || 'not_run';
+            const colors = {passed: 'bg-green-100 text-green-800', failed: 'bg-red-100 text-red-800', running: 'bg-yellow-100 text-yellow-800'};
+            const icons = {passed: '✅', failed: '❌', running: '🔄'};
+            
+            document.getElementById('e2e-status').innerHTML = `<span class="px-2 py-1 text-xs rounded ${colors[status] || 'bg-gray-100'}">${icons[status] || '⏳'} ${status}</span>`;
+            document.getElementById('e2e-tests').innerHTML = `${data.passed_milestones || 0}/${data.total_milestones || 0} passed`;
+            document.getElementById('e2e-summary').innerHTML = `<p class="text-sm text-gray-500">E2E</p><p class="text-xl font-bold ${status === 'passed' ? 'text-green-600' : 'text-red-600'}">${icons[status] || '⏳'}</p>`;
+        }).catch(() => {});
+
+        fetch('/api/services').then(r => r.json()).then(services => {
+            const tbody = document.getElementById('health-table-body');
+            Object.entries(services).forEach(([name, data]) => {
+                const icons = {api: '🔌', gateway: '🌐', 'platform-api': '⚙️', cli: '💻'};
+                const coverageColor = data.overall >= 80 ? 'text-green-600' : data.overall >= 60 ? 'text-yellow-600' : 'text-red-600';
+                
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center">
+                                <span class="text-2xl mr-3">${icons[name] || '📦'}</span>
+                                <div>
+                                    <div class="text-sm font-medium">${name}</div>
+                                    <div class="text-sm text-gray-500">Service</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4"><span class="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded">Service</span></td>
+                        <td class="px-6 py-4"><span class="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">🟢 Healthy</span></td>
+                        <td class="px-6 py-4 ${coverageColor} font-medium">${data.overall.toFixed(1)}%</td>
+                        <td class="px-6 py-4">${data.test_status?.unit_tests?.count || 0} tests</td>
+                    </tr>
+                `;
+            });
+        }).catch(() => {});
+
+        function refreshIntegrationTests() { location.reload(); }
+        async function collectAll() { 
+            await fetch('/api/collect', {method: 'POST'}); 
+            setTimeout(() => location.reload(), 2000); 
+        }
+    </script>
+</body>
+</html>

@@ -278,8 +278,12 @@ func (g *Gateway) healthCheck(c *gin.Context) {
 	defer cancel()
 	
 	redisStatus := "ok"
-	if err := g.redisClient.Ping(ctx).Err(); err != nil {
-		redisStatus = "error: " + err.Error()
+	if g.redisClient != nil {
+		if err := g.redisClient.Ping(ctx).Err(); err != nil {
+			redisStatus = "error: " + err.Error()
+		}
+	} else {
+		redisStatus = "not configured"
 	}
 	
 	// Check backend health (sample a few routes)

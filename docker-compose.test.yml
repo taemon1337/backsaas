@@ -218,6 +218,39 @@ services:
     profiles:
       - test-results
 
+  # Coverage Reporter Service - collects and serves coverage reports
+  coverage-reporter:
+    build:
+      context: ./services/coverage-reporter
+      dockerfile: Dockerfile
+    container_name: backsaas-coverage-reporter
+    ports:
+      - "8090:8090"
+    environment:
+      - PORT=8090
+      - STORAGE_TYPE=file
+      - STORAGE_PATH=/coverage-data
+    volumes:
+      - .:/workspace
+      - coverage_data:/coverage-data
+      - go_mod_cache:/go/pkg/mod
+      - go_build_cache:/root/.cache/go-build
+    depends_on:
+      test-postgres:
+        condition: service_healthy
+      test-redis:
+        condition: service_healthy
+    networks:
+      - backsaas-test-network
+    profiles:
+      - coverage
+      - all
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8090/api/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   test_postgres_data:
     driver: local
@@ -226,6 +259,8 @@ volumes:
   go_mod_cache:
     driver: local
   go_build_cache:
+    driver: local
+  coverage_data:
     driver: local
 
 networks:

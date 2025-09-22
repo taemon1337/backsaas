@@ -130,7 +130,19 @@ func (rm *RouteMatcher) matchHost(requestHost, routeHost string) bool {
 	// Wildcard subdomain matching (*.example.com)
 	if strings.HasPrefix(routeHost, "*.") {
 		domain := routeHost[2:]
-		return strings.HasSuffix(requestHost, "."+domain) || requestHost == domain
+		
+		// Exact domain match
+		if requestHost == domain {
+			return true
+		}
+		
+		// Single-level subdomain match
+		if strings.HasSuffix(requestHost, "."+domain) {
+			// Extract the part before the domain
+			prefix := requestHost[:len(requestHost)-len(domain)-1]
+			// Should not contain dots (only one level of subdomain)
+			return !strings.Contains(prefix, ".")
+		}
 	}
 	
 	return false

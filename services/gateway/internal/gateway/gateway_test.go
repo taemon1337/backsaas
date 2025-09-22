@@ -4,7 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestGateway(t *testing.T) {
@@ -67,15 +68,21 @@ func TestHealthCheck(t *testing.T) {
 	}
 	
 	// Mock gateway without Redis dependency
+	// Note: redisClient will be nil, which should be handled gracefully
 	gateway := &Gateway{
 		config: config,
 	}
 	
-	// Test health check handler
-	req, _ := http.NewRequest("GET", "/health", nil)
-	w := httptest.NewRecorder()
+	// Set gin to test mode
+	gin.SetMode(gin.TestMode)
 	
-	gateway.healthCheck(w, req)
+	// Create gin context for testing
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req, _ := http.NewRequest("GET", "/health", nil)
+	c.Request = req
+	
+	gateway.healthCheck(c)
 	
 	if w.Code != http.StatusServiceUnavailable {
 		t.Errorf("Expected status 503 without Redis, got %d", w.Code)
@@ -97,14 +104,7 @@ func TestCORSMiddleware(t *testing.T) {
 	// Test CORS middleware
 	middleware := gateway.corsMiddleware()
 	
-	req, _ := http.NewRequest("OPTIONS", "/test", nil)
-	req.Header.Set("Origin", "http://localhost:3000")
-	
-	w := httptest.NewRecorder()
-	
-	// Mock gin context
-	// This would need gin.Context in real test
-	// For now, just test that middleware function is created
+	// Test that middleware function is created
 	if middleware == nil {
 		t.Error("CORS middleware should not be nil")
 	}
@@ -214,13 +214,15 @@ func BenchmarkHealthCheck(b *testing.B) {
 	}
 	
 	gateway := &Gateway{config: config}
-	
-	req, _ := http.NewRequest("GET", "/health", nil)
+	gin.SetMode(gin.TestMode)
 	
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		w := httptest.NewRecorder()
-		gateway.healthCheck(w, req)
+		c, _ := gin.CreateTestContext(w)
+		req, _ := http.NewRequest("GET", "/health", nil)
+		c.Request = req
+		gateway.healthCheck(c)
 	}
 }
 

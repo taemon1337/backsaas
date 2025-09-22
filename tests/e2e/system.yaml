@@ -1,0 +1,242 @@
+# BackSaaS End-to-End Integration Test System Configuration
+version: 1
+name: "backsaas-e2e-tests"
+description: "Comprehensive end-to-end integration tests for BackSaaS platform"
+
+# Test Environment Configuration
+environment:
+  name: "e2e-test"
+  services:
+    - name: "platform-api"
+      url: "http://localhost:8080"
+      health_endpoint: "/health"
+      required: true
+    - name: "gateway"
+      url: "http://localhost:3000"
+      health_endpoint: "/health"
+      required: true
+    - name: "postgres"
+      url: "postgres://backsaas:backsaas@localhost:5432/backsaas_test"
+      required: true
+    - name: "redis"
+      url: "redis://localhost:6379"
+      required: false
+
+# Test Milestones - Each represents a major integration test phase
+milestones:
+  - id: "system_bootstrap"
+    name: "System Bootstrap"
+    description: "Bootstrap the BackSaaS system with platform schema"
+    timeout: "60s"
+    
+  - id: "component_loading"
+    name: "Component Loading"
+    description: "Load and validate all system components"
+    timeout: "30s"
+    depends_on: ["system_bootstrap"]
+    
+  - id: "tenant_creation"
+    name: "Tenant Creation"
+    description: "Create a test tenant with full configuration"
+    timeout: "30s"
+    depends_on: ["component_loading"]
+    
+  - id: "schema_deployment"
+    name: "Schema Deployment"
+    description: "Deploy and validate test schema for tenant"
+    timeout: "45s"
+    depends_on: ["tenant_creation"]
+    
+  - id: "api_operations"
+    name: "API Operations"
+    description: "Execute CRUD operations through API endpoints"
+    timeout: "60s"
+    depends_on: ["schema_deployment"]
+    
+  - id: "function_execution"
+    name: "Function Execution"
+    description: "Test platform functions (validation, hooks, events)"
+    timeout: "45s"
+    depends_on: ["api_operations"]
+    
+  - id: "tenant_cleanup"
+    name: "Tenant Cleanup"
+    description: "Clean up test tenant and validate removal"
+    timeout: "30s"
+    depends_on: ["function_execution"]
+
+# Test Data Templates
+test_data:
+  tenant:
+    tenant_id: "test-tenant-{{timestamp}}"
+    name: "E2E Test Tenant"
+    domain: "e2e-test.backsaas.local"
+    plan: "pro"
+    status: "active"
+    settings:
+      test_mode: true
+      auto_cleanup: true
+      
+  user:
+    user_id: "test-user-{{timestamp}}"
+    email: "test-user-{{timestamp}}@test.com"
+    first_name: "Test"
+    last_name: "User"
+    role: "admin"
+    status: "active"
+    
+  product:
+    id: "test-product-{{timestamp}}"
+    name: "Test Product"
+    description: "Integration test product"
+    price: 29.99
+    category: "test"
+    status: "active"
+
+# Test Scenarios for each milestone
+scenarios:
+  system_bootstrap:
+    - name: "Load Platform Schema"
+      action: "load_schema"
+      schema_file: "/workspace/schemas/platform.yaml"
+      validate: true
+      
+    - name: "Initialize Database"
+      action: "database_init"
+      migrations: true
+      seed_data: false
+      
+    - name: "Verify Service Health"
+      action: "health_check"
+      services: ["platform-api", "gateway"]
+      
+  component_loading:
+    - name: "Load Go Functions"
+      action: "load_functions"
+      packages: ["validation", "communication", "security"]
+      
+    - name: "Validate Function Registry"
+      action: "validate_registry"
+      functions: ["validate_email", "send_email", "validate_price"]
+      
+    - name: "Load Access Rules"
+      action: "load_access_rules"
+      validate_syntax: true
+      
+  tenant_creation:
+    - name: "Create Test Tenant"
+      action: "create_tenant"
+      data: "{{test_data.tenant}}"
+      validate_response: true
+      
+    - name: "Create Admin User"
+      action: "create_user"
+      data: "{{test_data.user}}"
+      tenant_context: true
+      
+    - name: "Generate API Key"
+      action: "create_api_key"
+      key_name: "E2E Test Key"
+      permissions: ["read", "write", "delete"]
+      
+  schema_deployment:
+    - name: "Deploy Test Schema"
+      action: "deploy_schema"
+      schema_file: "/workspace/services/platform-api/testdata/test-schema.yaml"
+      tenant_context: true
+      
+    - name: "Validate Schema Deployment"
+      action: "validate_deployment"
+      check_tables: true
+      check_indexes: true
+      
+    - name: "Test Schema Endpoints"
+      action: "test_endpoints"
+      entities: ["users", "products"]
+      methods: ["GET", "POST", "PUT", "DELETE"]
+      
+  api_operations:
+    - name: "Create Test Records"
+      action: "crud_operations"
+      operations:
+        - entity: "users"
+          method: "POST"
+          data: "{{test_data.user}}"
+        - entity: "products"
+          method: "POST"
+          data: "{{test_data.product}}"
+          
+    - name: "Read Test Records"
+      action: "crud_operations"
+      operations:
+        - entity: "users"
+          method: "GET"
+          filter: "email={{test_data.user.email}}"
+        - entity: "products"
+          method: "GET"
+          filter: "category=test"
+          
+    - name: "Update Test Records"
+      action: "crud_operations"
+      operations:
+        - entity: "products"
+          method: "PUT"
+          data: {"price": 39.99}
+          filter: "id={{test_data.product.id}}"
+          
+  function_execution:
+    - name: "Test Validation Functions"
+      action: "test_functions"
+      functions:
+        - name: "validate_email"
+          input: {"email": "invalid-email"}
+          expected_result: false
+        - name: "validate_price"
+          input: {"price": -10}
+          expected_result: false
+          
+    - name: "Test Event Triggers"
+      action: "test_events"
+      triggers:
+        - event: "user.created"
+          action: "create_user"
+          data: "{{test_data.user}}"
+          expected_events: ["user.created"]
+          
+    - name: "Test Async Functions"
+      action: "test_async"
+      functions: ["welcome_new_user"]
+      timeout: "10s"
+      
+  tenant_cleanup:
+    - name: "Delete Test Records"
+      action: "cleanup_records"
+      entities: ["products", "users"]
+      tenant_context: true
+      
+    - name: "Delete Test Tenant"
+      action: "delete_tenant"
+      tenant_id: "{{test_data.tenant.tenant_id}}"
+      force: true
+      
+    - name: "Verify Cleanup"
+      action: "verify_cleanup"
+      check_database: true
+      check_files: true
+
+# Reporting Configuration
+reporting:
+  dashboard_integration: true
+  milestone_tracking: true
+  detailed_logs: true
+  performance_metrics: true
+  
+  # Service Health Dashboard Integration
+  health_dashboard:
+    endpoint: "http://localhost:8090/api/integration-tests"
+    update_frequency: "real-time"
+    metrics:
+      - "milestone_completion_rate"
+      - "test_execution_time"
+      - "error_count"
+      - "performance_benchmarks"
