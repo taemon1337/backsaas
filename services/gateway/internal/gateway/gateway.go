@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -126,7 +129,21 @@ func (g *Gateway) setupRouter() error {
 		g.router.GET(g.config.Monitoring.MetricsPath, g.monitoring.MetricsHandler())
 	}
 	
-	// Add main proxy handler with middleware chain
+	// Add test endpoints for debugging and testing (BEFORE NoRoute)
+	log.Printf("DEBUG: Environment check - current: '%s', production check: %v", g.config.Environment, g.config.Environment != "production")
+	if g.config.Environment != "production" {
+		log.Printf("Setting up test endpoints (environment: %s)", g.config.Environment)
+		g.setupTestEndpoints()
+	} else {
+		log.Printf("Skipping test endpoints (production environment: %s)", g.config.Environment)
+	}
+	
+	// WebSocket support is integrated into the main proxy handler for development
+	if g.config.Environment == "development" {
+		log.Printf("WebSocket support enabled for development (integrated into proxy handler)")
+	}
+	
+	// Add main proxy handler with middleware chain (this catches all unmatched routes)
 	g.router.NoRoute(g.proxyHandler())
 	
 	return nil
@@ -135,6 +152,12 @@ func (g *Gateway) setupRouter() error {
 // proxyHandler creates the main proxy handler with middleware chain
 func (g *Gateway) proxyHandler() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		// Check for WebSocket upgrade first (in development mode)
+		if g.config.Environment == "development" && isWebSocketUpgrade(c.Request) {
+			g.handleWebSocketUpgrade(c)
+			return
+		}
+		
 		// Find matching route
 		route, err := g.matcher.Match(c.Request)
 		if err != nil {
@@ -409,4 +432,67 @@ func joinStrings(strs []string, sep string) string {
 		result += sep + strs[i]
 	}
 	return result
+}
+
+// handleWebSocketUpgrade handles WebSocket upgrade requests by proxying to the appropriate backend
+func (g *Gateway) handleWebSocketUpgrade(c *gin.Context) {
+	// Find matching route for WebSocket
+	route, err := g.matcher.Match(c.Request)
+	if err != nil {
+		log.Printf("No route found for WebSocket request: %s", c.Request.URL.Path)
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+
+	// Parse backend URL
+	backendURL, err := url.Parse(route.Backend.URL)
+	if err != nil {
+		log.Printf("Invalid backend URL for WebSocket: %s", route.Backend.URL)
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+
+	// Create reverse proxy for WebSocket
+	proxy := httputil.NewSingleHostReverseProxy(backendURL)
+	
+	// Modify the request for WebSocket forwarding
+	proxy.Director = func(req *http.Request) {
+		req.URL.Scheme = "http"
+		req.URL.Host = backendURL.Host
+		
+		// Apply path transformation if configured
+		if route.Transform != nil && route.Transform.RewritePath != "" {
+			if route.Transform.RewritePath == "/" {
+				// Strip the path prefix
+				req.URL.Path = strings.TrimPrefix(req.URL.Path, route.PathPrefix)
+				if req.URL.Path == "" {
+					req.URL.Path = "/"
+				}
+			} else {
+				req.URL.Path = route.Transform.RewritePath
+			}
+		}
+
+		// Add custom headers
+		if route.Transform != nil && route.Transform.AddHeaders != nil {
+			for key, value := range route.Transform.AddHeaders {
+				req.Header.Set(key, value)
+			}
+		}
+
+		// Preserve WebSocket headers
+		req.Header.Set("X-Forwarded-For", c.ClientIP())
+		req.Header.Set("X-Forwarded-Proto", "http")
+		req.Header.Set("X-Forwarded-Host", req.Host)
+	}
+
+	// Handle WebSocket upgrade
+	log.Printf("Proxying WebSocket request: %s -> %s", c.Request.URL.Path, backendURL.String())
+	proxy.ServeHTTP(c.Writer, c.Request)
+}
+
+// isWebSocketUpgrade checks if the request is a WebSocket upgrade request
+func isWebSocketUpgrade(r *http.Request) bool {
+	return strings.ToLower(r.Header.Get("Connection")) == "upgrade" &&
+		strings.ToLower(r.Header.Get("Upgrade")) == "websocket"
 }

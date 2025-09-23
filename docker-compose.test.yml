@@ -1,6 +1,5 @@
 # BackSaaS Comprehensive Testing Environment
 # This compose file extends the main docker-compose.yml for testing
-version: '3.8'
 
 services:
   # Test Database - isolated from development data

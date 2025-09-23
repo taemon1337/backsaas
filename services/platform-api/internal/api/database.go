@@ -145,24 +145,30 @@ func (d *DatabaseOperations) propertyToColumnDefinition(propName string, propDef
 
 // InsertEntity inserts a new entity into the database
 func (d *DatabaseOperations) InsertEntity(entityName string, entity *schema.Entity, data map[string]interface{}) (map[string]interface{}, error) {
-	// Add audit fields
-	now := time.Now()
-	data["created_at"] = now
-	data["updated_at"] = now
-	data["tenant_id"] = d.tenantID
+	// Create a copy of the data to avoid mutating the original map
+	insertData := make(map[string]interface{})
+	for k, v := range data {
+		insertData[k] = v
+	}
+	
+	// Add audit fields - truncate to microsecond precision to match PostgreSQL
+	now := time.Now().Truncate(time.Microsecond)
+	insertData["created_at"] = now
+	insertData["updated_at"] = now
+	insertData["tenant_id"] = d.tenantID
 	
 	// Generate ID if not provided
-	if data[entity.Key] == nil {
-		data[entity.Key] = d.generateID()
+	if insertData[entity.Key] == nil {
+		insertData[entity.Key] = d.generateID()
 	}
 	
 	// Build INSERT statement
-	columns := make([]string, 0, len(data))
-	placeholders := make([]string, 0, len(data))
-	values := make([]interface{}, 0, len(data))
+	columns := make([]string, 0, len(insertData))
+	placeholders := make([]string, 0, len(insertData))
+	values := make([]interface{}, 0, len(insertData))
 	
 	i := 1
-	for key, value := range data {
+	for key, value := range insertData {
 		columns = append(columns, key)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
 		values = append(values, value)
@@ -190,8 +196,8 @@ func (d *DatabaseOperations) InsertEntity(entityName string, entity *schema.Enti
 
 // UpdateEntity updates an existing entity in the database
 func (d *DatabaseOperations) UpdateEntity(entityName string, entity *schema.Entity, id string, data map[string]interface{}) (map[string]interface{}, error) {
-	// Add audit fields
-	data["updated_at"] = time.Now()
+	// Add audit fields - truncate to microsecond precision to match PostgreSQL
+	data["updated_at"] = time.Now().Truncate(time.Microsecond)
 	
 	// Remove key and tenant_id from update data
 	delete(data, entity.Key)
@@ -356,6 +362,12 @@ func (d *DatabaseOperations) rowToMap(row *sql.Row, entity *schema.Entity) (map[
 			val = string(b)
 		}
 		
+		// Normalize timestamp fields to match Go's timezone format
+		if t, ok := val.(time.Time); ok && (col == "created_at" || col == "updated_at") {
+			// Ensure timezone is in UTC and truncate to microsecond precision
+			val = t.UTC().Truncate(time.Microsecond)
+		}
+		
 		result[col] = val
 	}
 	
@@ -395,6 +407,12 @@ func (d *DatabaseOperations) rowsToMaps(rows *sql.Rows, entity *schema.Entity) (
 			// Convert []byte to string for text fields
 			if b, ok := val.([]byte); ok {
 				val = string(b)
+			}
+			
+			// Normalize timestamp fields to match Go's timezone format
+			if t, ok := val.(time.Time); ok && (col == "created_at" || col == "updated_at") {
+				// Ensure timezone is in UTC and truncate to microsecond precision
+				val = t.UTC().Truncate(time.Microsecond)
 			}
 			
 			result[col] = val

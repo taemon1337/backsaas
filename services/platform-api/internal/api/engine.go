@@ -9,16 +9,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq" // PostgreSQL driver
+	"github.com/backsaas/platform/services/platform-api/internal/admin"
 	"github.com/backsaas/platform/services/platform-api/internal/schema"
 )
 
 // Engine represents the generic schema-driven API engine
 type Engine struct {
-	schema   *schema.Schema
-	db       *sql.DB
-	dbOps    *DatabaseOperations
-	tenantID string
-	router   *gin.Engine
+	schema      *schema.Schema
+	db          *sql.DB
+	dbOps       *DatabaseOperations
+	tenantID    string
+	router      *gin.Engine
+	authService *admin.AuthService
 }
 
 // Config holds configuration for the API engine
@@ -67,12 +69,16 @@ func NewEngine(config *Config) (*Engine, error) {
 	// Create database operations handler
 	dbOps := NewDatabaseOperations(db, config.TenantID)
 	
+	// Create admin auth service
+	authService := admin.NewAuthService()
+	
 	// Create engine
 	engine := &Engine{
-		schema:   schemaObj,
-		db:       db,
-		dbOps:    dbOps,
-		tenantID: config.TenantID,
+		schema:      schemaObj,
+		db:          db,
+		dbOps:       dbOps,
+		tenantID:    config.TenantID,
+		authService: authService,
 	}
 	
 	// Ensure database tables exist for all entities
@@ -111,6 +117,9 @@ func (e *Engine) setupRouter() error {
 		e.setupEntityRoutes(api, entityName, entity)
 	}
 	
+	// Setup admin authentication routes
+	e.setupAdminRoutes()
+	
 	return nil
 }
 
@@ -132,6 +141,17 @@ func (e *Engine) setupEntityRoutes(group *gin.RouterGroup, entityName string, en
 	
 	// DELETE /api/{entity}/{id} - Delete entity
 	entityGroup.DELETE("/:id", e.deleteEntity(entityName, entity))
+}
+
+// setupAdminRoutes creates admin authentication routes
+func (e *Engine) setupAdminRoutes() {
+	adminGroup := e.router.Group("/api/platform/admin")
+	
+	// POST /api/platform/admin/login - Admin login
+	adminGroup.POST("/login", e.authService.Login)
+	
+	// POST /api/platform/admin/refresh - Token refresh
+	adminGroup.POST("/refresh", e.authService.RefreshToken)
 }
 
 // tenantMiddleware adds tenant context to requests

@@ -70,19 +70,17 @@ monitoring:
 
 # Route definitions
 routes:
-  # Admin Console UI - platform management interface
-  - description: "Admin Console UI"
+  # Admin Console UI - platform management interface (host-based)
+  - description: "Admin Console UI (Host-based)"
     host: "admin.backsaas.dev"
     path_prefix: "/"
     backend:
-      url: "http://localhost:3000"
+      url: "http://admin-console:3000"
       timeout: "30s"
       max_retries: 2
-      health_check_path: "/api/health"
+      health_check_path: "/"
     auth:
-      enabled: true
-      required: true
-      required_roles: ["platform_admin", "support_admin", "billing_admin"]
+      enabled: false  # Let admin console handle its own auth
     rate_limit:
       enabled: true
       requests_per_minute: 300
@@ -92,12 +90,52 @@ routes:
         X-Interface-Type: "admin-console"
     enabled: true
 
-  # Tenant UI - business interface
+  # Admin Console - all /admin traffic forwarded as-is to Next.js with basePath
+  - description: "Admin Console (All /admin traffic)"
+    path_prefix: "/admin"
+    backend:
+      url: "http://admin-console:3000"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/admin"
+    auth:
+      enabled: false  # Let admin console handle its own auth
+    rate_limit:
+      enabled: true
+      requests_per_minute: 300
+      burst_size: 60
+    transform:
+      add_headers:
+        X-Interface-Type: "admin-console"
+      # No rewrite_path - forward all /admin traffic as-is to Next.js
+    enabled: true
+
+  # Health Dashboard - system monitoring interface
+  - description: "Health Dashboard"
+    path_prefix: "/dashboard"
+    backend:
+      url: "http://health-dashboard:8090"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/health"
+    auth:
+      enabled: false  # Public access for now
+    rate_limit:
+      enabled: true
+      requests_per_minute: 100
+      burst_size: 20
+    transform:
+      add_headers:
+        X-Interface-Type: "health-dashboard"
+      rewrite_path: "/"  # Remove /dashboard prefix when forwarding to backend
+    enabled: true
+
+  # Tenant UI - business interface (disabled - service not implemented yet)
   - description: "Tenant UI"
     host: "*.backsaas.dev"
     path_prefix: "/"
     backend:
-      url: "http://localhost:3001"
+      url: "http://tenant-ui:3001"
       timeout: "30s"
       max_retries: 2
       health_check_path: "/api/health"
@@ -111,13 +149,13 @@ routes:
     transform:
       add_headers:
         X-Interface-Type: "tenant-ui"
-    enabled: true
+    enabled: false
 
-  # Tenant UI (path-based routing alternative)
+  # Tenant UI (path-based routing alternative) (disabled - service not implemented yet)
   - description: "Tenant UI Path-based"
     path_prefix: "/app"
     backend:
-      url: "http://localhost:3001"
+      url: "http://tenant-ui:3001"
       timeout: "30s"
       max_retries: 2
       health_check_path: "/api/health"
@@ -132,33 +170,31 @@ routes:
       add_headers:
         X-Interface-Type: "tenant-ui"
       rewrite_path: "/"
-    enabled: true
+    enabled: false
 
   # Platform API (system tenant) - manages tenants, schemas, etc.
   - description: "Platform Management API"
     tenant_id: "system"
     path_prefix: "/api/platform"
     backend:
-      url: "http://localhost:8080"
+      url: "http://platform-api:8080"
       timeout: "30s"
       max_retries: 3
       health_check_path: "/health"
     auth:
-      enabled: true
-      required: true
-      required_roles: ["admin", "platform_admin"]
+      enabled: false  # Let platform-api handle its own authentication
     rate_limit:
       enabled: true
       requests_per_minute: 200
       burst_size: 50
     enabled: true
 
-  # Tenant API routing by subdomain (tenant.api.backsaas.dev)
+  # Tenant API routing by subdomain (disabled - using existing test-tenant-api service)
   - description: "Tenant API by Subdomain"
     host: "*.api.backsaas.dev"
     path_prefix: "/api"
     backend:
-      url: "http://localhost:8081"  # Tenant API service
+      url: "http://test-tenant-api:8081"  # Tenant API service
       timeout: "30s"
       max_retries: 3
       health_check_path: "/health"
@@ -172,13 +208,13 @@ routes:
       enabled: true
       requests_per_minute: 300
       burst_size: 60
-    enabled: true
+    enabled: false
 
-  # Tenant API routing by path (/api/tenants/{tenant-id}/...)
+  # Tenant API routing by path (disabled - using existing test-tenant-api service)
   - description: "Tenant API by Path"
     path_prefix: "/api/tenants/"
     backend:
-      url: "http://localhost:8081"
+      url: "http://test-tenant-api:8081"
       timeout: "30s"
       max_retries: 3
       health_check_path: "/health"
@@ -192,13 +228,13 @@ routes:
       enabled: true
       requests_per_minute: 300
       burst_size: 60
-    enabled: true
+    enabled: false
 
-  # Authentication service
+  # Authentication service (disabled - service not implemented yet)
   - description: "Authentication API"
     path_prefix: "/auth"
     backend:
-      url: "http://localhost:8082"
+      url: "http://auth-service:8082"
       timeout: "15s"
       max_retries: 2
       health_check_path: "/health"
@@ -208,13 +244,13 @@ routes:
       enabled: true
       requests_per_minute: 60
       burst_size: 20
-    enabled: true
+    enabled: false
 
-  # Static assets and documentation
+  # Static assets and documentation (disabled - service not implemented yet)
   - description: "Static Assets"
     path_prefix: "/static"
     backend:
-      url: "http://localhost:8083"
+      url: "http://static-service:8083"
       timeout: "10s"
       max_retries: 1
     auth:
@@ -223,13 +259,13 @@ routes:
       enabled: true
       requests_per_minute: 500
       burst_size: 100
-    enabled: true
+    enabled: false
 
-  # API documentation
+  # API documentation (disabled - service not implemented yet)
   - description: "API Documentation"
     path_prefix: "/docs"
     backend:
-      url: "http://localhost:8084"
+      url: "http://docs-service:8084"
       timeout: "10s"
       max_retries: 1
     auth:
@@ -238,13 +274,13 @@ routes:
       enabled: true
       requests_per_minute: 100
       burst_size: 20
-    enabled: true
+    enabled: false
 
-  # Webhook endpoints (higher rate limits)
+  # Webhook endpoints (disabled - service not implemented yet)
   - description: "Webhook Endpoints"
     path_prefix: "/webhooks"
     backend:
-      url: "http://localhost:8085"
+      url: "http://webhook-service:8085"
       timeout: "60s"
       max_retries: 1
     auth:
@@ -258,13 +294,13 @@ routes:
     transform:
       add_headers:
         X-Gateway-Route: "webhook"
-    enabled: true
+    enabled: false
 
-  # Health check aggregation
+  # Health check aggregation (disabled - service not implemented yet)
   - description: "Health Check Aggregation"
     path_prefix: "/health/services"
     backend:
-      url: "http://localhost:8086"
+      url: "http://health-service:8086"
       timeout: "5s"
       max_retries: 1
     auth:
@@ -273,4 +309,4 @@ routes:
       enabled: true
       requests_per_minute: 30
       burst_size: 10
-    enabled: true
+    enabled: false

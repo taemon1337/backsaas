@@ -1,493 +1,204 @@
-# BackSaas Monorepo Makefile
-# 
-# IMPORTANT: This Makefile runs ALL commands inside Docker containers
-# to ensure consistent development environments across different machines.
-# 
-# Requirements:
-# - Docker must be installed and running
-# - No local tool installations required (Go, Node.js, etc.)
-# 
-# All operations use temporary Docker containers that are automatically
-# removed after execution (--rm flag).
+# BackSaaS Simplified Makefile
+# ============================
+# Service-oriented commands that map directly to Docker Compose services
 
-.PHONY: help build test clean dev setup dev-up dev-down dev-logs dev-status test-all test-unit test-integration test-setup test-clean mod-tidy coverage-up coverage-down coverage-logs coverage-collect coverage-report
+.PHONY: help up down restart logs status build test clean
 
-# Docker images for different tools
-# NOTE: Always use specific versions for reproducible builds
-# Using full golang image (not alpine) to include git for go mod operations
-GO_IMAGE=golang:1.23
-NODE_IMAGE=node:18-alpine
-POSTGRES_IMAGE=postgres:15-alpine
-
-# Docker run commands
-# NOTE: Using temporary containers with volume mounts
-# Mount Go caches from host for faster builds and module downloads
-DOCKER_GO=docker run --rm \
-	-v $(PWD):/app \
-	-v $(HOME)/go/pkg/mod:/go/pkg/mod \
-	-v $(HOME)/.cache/go-build:/root/.cache/go-build \
-	-w /app \
-	$(GO_IMAGE)
-DOCKER_NODE=docker run --rm -v $(PWD):/app -w /app $(NODE_IMAGE)
-
-# Default target
-help: ## Show this help message
-	@echo "BackSaas Development Commands (Docker-based)"
-	@echo "============================================="
+help: ## Show available commands
+	@echo "🏗️  BackSaaS Development Commands"
+	@echo "=================================="
 	@echo ""
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "NOTE: All commands run in Docker containers - no local tools required!"
+	@echo "📦 Services: postgres, redis, platform-api, gateway, health-dashboard"
+	@echo "🔧 Profiles: monitoring, test"
 
-# Setup targets
-setup: ## Setup development environment with Docker containers
-	@echo "Setting up BackSaas development environment..."
-	@echo "NOTE: Using Docker containers for all services"
-	$(MAKE) setup-db
-	$(MAKE) setup-services
-	@echo "Setup complete! Use 'make dev' to start development servers."
+# === CORE SERVICES ===
+up: ## Start all core services
+	@echo "🚀 Starting BackSaaS core services..."
+	docker compose up -d postgres redis platform-api gateway admin-console health-dashboard
+	@echo "✅ Services started! Check with 'make status'"
 
-setup-db: ## Setup PostgreSQL database container
-	@echo "Setting up PostgreSQL database..."
-	@docker run --rm --name backsaas-db -d \
-		-e POSTGRES_USER=postgres \
-		-e POSTGRES_PASSWORD=postgres \
-		-e POSTGRES_DB=backsaas \
-		-p 5432:5432 \
-		$(POSTGRES_IMAGE) || echo "Database container already exists"
-	@sleep 3
-	@docker exec backsaas-db psql -U postgres -c "CREATE DATABASE backsaas_platform;" || echo "Platform DB exists"
-	@docker exec backsaas-db psql -U postgres -c "CREATE DATABASE backsaas_test;" || echo "Test DB exists"
+down: ## Stop all services
+	@echo "🛑 Stopping all services..."
+	docker compose down
+	@echo "✅ All services stopped"
 
-setup-services: ## Install dependencies for all services using Docker
-	@echo "📦 Downloading dependencies in Docker container..."
-	# NOTE: Create Go cache directories if they don't exist
-	@mkdir -p $(HOME)/go/pkg/mod $(HOME)/.cache/go-build
-	# NOTE: Platform API dependencies (Go modules) with cache mounts
-	@echo "Installing Platform API Go dependencies..."
-	cd services/platform-api && docker run --rm \
-		-v $(PWD)/services/platform-api:/app \
-		-v $(HOME)/go/pkg/mod:/go/pkg/mod \
-		-v $(HOME)/.cache/go-build:/root/.cache/go-build \
-		-w /app \
-		$(GO_IMAGE) go mod download
-	# NOTE: Gateway dependencies (Go modules) with cache mounts
-	@echo "Installing Gateway Go dependencies..."
-	cd services/gateway && docker run --rm \
-		-v $(PWD)/services/gateway:/app \
-		-v $(HOME)/go/pkg/mod:/go/pkg/mod \
-		-v $(HOME)/.cache/go-build:/root/.cache/go-build \
-		-w /app \
-		$(GO_IMAGE) go mod download
-	# NOTE: Web UI dependencies (npm packages) - skip if apps/web doesn't exist
-	@if [ -d "apps/web" ]; then \
-		echo "Installing Node.js dependencies..."; \
-		cd apps/web && docker run --rm -v $(PWD)/apps/web:/app -w /app $(NODE_IMAGE) npm install; \
-	else \
-		echo "Skipping Web UI setup (apps/web not found)"; \
-	fi
+restart: ## Restart all core services
+	@echo "🔄 Restarting services..."
+	docker compose restart postgres redis platform-api gateway admin-console health-dashboard
+	@echo "✅ Services restarted"
 
-mod-tidy: ## Run go mod tidy on all Go modules using Docker
-	@echo "🧹 Running go mod tidy on all Go modules in Docker containers..."
-	@mkdir -p $(HOME)/go/pkg/mod $(HOME)/.cache/go-build
-	# NOTE: Platform API
-	@echo "Tidying Platform API Go modules..."
-	cd services/platform-api && $(DOCKER_GO) go mod tidy
-	# NOTE: Gateway
-	@echo "Tidying Gateway Go modules..."
-	cd services/gateway && $(DOCKER_GO) go mod tidy
-	# NOTE: API Service
-	@echo "Tidying API Service Go modules..."
-	cd services/api && $(DOCKER_GO) go mod tidy
-	# NOTE: Migrator
-	@echo "Tidying Migrator Go modules..."
-	cd services/migrator && $(DOCKER_GO) go mod tidy
-	# NOTE: CLI
-	@echo "Tidying CLI Go modules..."
-	cd cmd/backsaas && $(DOCKER_GO) go mod tidy
-	@echo "✅ All Go modules tidied"
+# === SERVICE MANAGEMENT ===
+restart-api: ## Restart platform-api
+	@echo "🔄 Restarting platform-api..."
+	docker compose restart platform-api
 
-# Build targets
-build: ## Build all services using Docker containers
-	@echo "Building all services in Docker containers..."
-	$(MAKE) build-platform-api
-	$(MAKE) build-gateway
-	$(MAKE) build-web
+restart-gateway: ## Restart gateway
+	@echo "🔄 Restarting gateway..."
+	docker compose restart gateway
 
-build-platform-api: ## Build Platform API service
-	@echo "Building Platform API in Docker container..."
-	# NOTE: Using Docker container for Go build
-	cd services/platform-api && $(MAKE) build
+restart-admin: ## Restart admin console
+	@echo "🔄 Restarting admin console..."
+	docker compose restart admin-console
 
-build-gateway: ## Build Gateway service
-	@echo "Building Gateway in Docker container..."
-	# NOTE: Using Docker container for Go build
-	cd services/gateway && $(MAKE) build
+restart-dashboard: ## Restart health dashboard
+	@echo "🔄 Restarting health dashboard..."
+	docker compose restart health-dashboard
 
-build-web: ## Build Web UI
-	@echo "Building Web UI in Docker container..."
-	# NOTE: Using Docker container for Node.js build - skip if doesn't exist
-	@if [ -d "apps/web" ]; then \
-		cd apps/web && docker run --rm -v $(PWD)/apps/web:/app -w /app $(NODE_IMAGE) npm run build; \
-	else \
-		echo "Skipping Web UI build (apps/web not found)"; \
-	fi
+restart-db: ## Restart database services
+	@echo "🔄 Restarting databases..."
+	docker compose restart postgres redis
 
-# Test targets
-test: ## Run complete test suite (unit tests + coverage + E2E integration tests)
-	@echo "🚀 Running Complete BackSaaS Test Suite..."
-	@echo "=================================================="
-	@echo "📋 Phase 1: Unit Tests with Coverage"
-	@$(MAKE) test-full-coverage
+# === MONITORING ===
+logs: ## Show logs from all services
+	docker compose logs -f
+
+logs-api: ## Show platform-api logs
+	docker compose logs -f platform-api
+
+logs-gateway: ## Show gateway logs
+	docker compose logs -f gateway
+
+logs-admin: ## Show admin console logs
+	docker compose logs -f admin-console
+
+logs-dashboard: ## Show health dashboard logs
+	docker compose logs -f health-dashboard
+
+logs-db: ## Show database logs
+	docker compose logs -f postgres redis
+
+status: ## Show service status
+	@echo "📊 BackSaaS Service Status"
+	@echo "==========================="
+	@docker compose ps
+	@echo ""
+	@echo "🌐 URLs:"
+	@echo "  Platform API:    http://localhost:8080"
+	@echo "  Gateway:         http://localhost:8000"
+	@echo "  Admin Console:   http://localhost:3000"
+	@echo "  Health Dashboard: http://localhost:8090"
+
+# === BUILDING ===
+build: ## Build all service images
+	@echo "🔨 Building all images..."
+	docker compose build
+
+build-api: ## Build platform-api
+	docker compose build platform-api
+
+build-gateway: ## Build gateway
+	docker compose build gateway
+
+build-admin: ## Build admin console
+	docker compose build admin-console
+
+# === TESTING ===
+test: ## Run complete test suite
+	@echo "🚀 Running Complete Test Suite..."
+	@echo "================================="
+	@echo "📋 Phase 1: Unit Tests + Coverage"
+	@$(MAKE) test-coverage
 	@echo ""
 	@echo "📋 Phase 2: E2E Integration Tests"
-	@$(MAKE) test-e2e-integration
+	@$(MAKE) test-e2e
 	@echo ""
-	@echo "📋 Phase 3: Generating Final Test Report"
+	@echo "📋 Phase 3: Test Report"
 	@$(MAKE) test-report
-	@echo "=================================================="
+	@echo "================================="
 	@echo "✅ Complete Test Suite Finished!"
-	@echo "📊 View results at: http://localhost:8090"
+	@echo "📊 Results: http://localhost:8090"
 
-test-all: ## Run comprehensive tests in isolated Docker environment (legacy)
-	@echo "🚀 Running comprehensive BackSaaS tests..."
-	@echo "📋 Using enhanced testing infrastructure with isolated environment"
-	@$(MAKE) -f Makefile.test test-all
-
-test-report: ## Generate comprehensive test report
-	@echo "📊 Generating comprehensive test report..."
-	@echo "🔍 Collecting final test metrics..."
-	@curl -s http://localhost:8090/api/services | jq '{services: keys, summary: {total_services: (. | length), avg_coverage: ([.[] | .overall] | add / length | floor)}}' || echo "Dashboard not available"
-	@curl -s http://localhost:8090/api/integration-tests | jq '{integration_tests: {status: .status, total_milestones: .total_milestones, passed: .passed_milestones, failed: .failed_milestones}}' || echo "Integration tests not available"
-	@echo "📈 Test report complete!"
-
-test-quick: ## Quick test run (unit tests with cached images only)
-	@echo "⚡ Running Quick Test Suite..."
-	@echo "📋 Unit Tests with Coverage (using cached images)"
-	@$(MAKE) test-coverage-quick
-	@echo "✅ Quick tests completed!"
-	@echo "📊 View results at: http://localhost:8090"
-
-test-unit: ## Run unit tests only
-	@echo "🧪 Running unit tests in isolated environment..."
-	@$(MAKE) -f Makefile.test test-unit
-
-test-integration: ## Run integration tests only
-	@echo "🔗 Running integration tests in isolated environment..."
-	@$(MAKE) -f Makefile.test test-integration
-
-test-setup: ## Setup isolated test environment
-	@echo "🔧 Setting up isolated test environment..."
-	@$(MAKE) -f Makefile.test test-setup
-
-test-clean: ## Clean test environment and results
-	@echo "🧹 Cleaning test environment..."
-	@$(MAKE) -f Makefile.test test-clean
-
-test-coverage: ## Generate test coverage reports
-	@echo "📊 Generating coverage reports..."
+test-coverage: ## Run unit tests with coverage
 	@$(MAKE) -f Makefile.test test-coverage
 
-test-full-coverage: ## Run all unit tests with coverage and update Service Health Dashboard
-	@echo "🚀 Running comprehensive coverage analysis with optimized Docker images..."
-	@echo "📊 Step 1: Starting coverage dashboard..."
-	@$(MAKE) coverage-up
-	@echo "🔨 Step 2: Building optimized test images with Go module caching..."
-	@echo "  → Building API test image..."
-	@cd services/api && docker build -f Dockerfile.test -t backsaas-api-test . || true
-	@echo "  → Building Gateway test image..."
-	@cd services/gateway && docker build -f Dockerfile.test -t backsaas-gateway-test . || true
-	@echo "  → Building Platform-API test image..."
-	@cd services/platform-api && docker build -f Dockerfile.test -t backsaas-platform-api-test . || true
-	@echo "  → Building CLI test image..."
-	@cd cmd/backsaas && docker build -f Dockerfile.test -t backsaas-cli-test . || true
-	@echo "🧪 Step 3: Running unit tests with coverage using cached images..."
-	@echo "  → Testing API service..."
-	@cd services/api && docker run --rm -v $$(pwd):/app/output backsaas-api-test go test -coverprofile=/app/output/coverage.out ./... || true
-	@echo "  → Testing Gateway service..."
-	@cd services/gateway && docker run --rm -v $$(pwd):/app/output backsaas-gateway-test go test -coverprofile=/app/output/coverage.out ./... || true
-	@echo "  → Testing Platform-API service..."
-	@cd services/platform-api && docker run --rm -v $$(pwd):/app/output backsaas-platform-api-test go test -coverprofile=/app/output/coverage.out ./... || true
-	@echo "  → Testing CLI service..."
-	@cd cmd/backsaas && docker run --rm -v $$(pwd):/app/output backsaas-cli-test go test -coverprofile=/app/output/coverage.out ./internal/cli/ || true
-	@cp cmd/backsaas/coverage.out cmd/backsaas/coverage.txt || true
-	@echo "📈 Step 4: Collecting coverage data and updating dashboard..."
-	@$(MAKE) coverage-collect
-	@echo "✅ Complete! Service Health Dashboard updated at: http://localhost:8090"
-	@echo "🎯 Summary:"
-	@curl -s http://localhost:8090/api/services | jq 'to_entries | map({service: .key, code_coverage: (.value.overall | floor), test_coverage: (.value.test_status.test_coverage_percent | floor), unit_tests: .value.test_status.unit_tests.count}) | sort_by(.code_coverage) | reverse' || echo "Dashboard starting up..."
-
-test-coverage-quick: ## Quick coverage update using existing test images (no rebuild)
-	@echo "⚡ Quick coverage analysis using cached test images..."
-	@echo "📊 Step 1: Starting coverage dashboard..."
-	@$(MAKE) coverage-up
-	@echo "🧪 Step 2: Running tests with existing cached images..."
-	@echo "  → Testing API service..."
-	@cd services/api && docker run --rm -v $$(pwd):/app/output backsaas-api-test go test -coverprofile=/app/output/coverage.out ./... || echo "API test image not found - run 'make test-full-coverage' first"
-	@echo "  → Testing Gateway service..."
-	@cd services/gateway && docker run --rm -v $$(pwd):/app/output backsaas-gateway-test go test -coverprofile=/app/output/coverage.out ./... || echo "Gateway test image not found - run 'make test-full-coverage' first"
-	@echo "  → Testing Platform-API service..."
-	@cd services/platform-api && docker run --rm -v $$(pwd):/app/output backsaas-platform-api-test go test -coverprofile=/app/output/coverage.out ./... || echo "Platform-API test image not found - run 'make test-full-coverage' first"
-	@echo "  → Testing CLI service..."
-	@cd cmd/backsaas && docker run --rm -v $$(pwd):/app/output backsaas-cli-test go test -coverprofile=/app/output/coverage.out ./internal/cli/ || echo "CLI test image not found - run 'make test-full-coverage' first"
-	@cp cmd/backsaas/coverage.out cmd/backsaas/coverage.txt || true
-	@echo "📈 Step 3: Updating dashboard..."
-	@$(MAKE) coverage-collect
-	@echo "⚡ Quick update complete! Dashboard at: http://localhost:8090"
-
-test-coverage-clean: ## Clean test images and coverage files
-	@echo "🧹 Cleaning test images and coverage files..."
-	@docker rmi backsaas-api-test backsaas-gateway-test backsaas-platform-api-test backsaas-cli-test 2>/dev/null || true
-	@find . -name "coverage.out" -delete || true
-	@find . -name "coverage.txt" -delete || true
-	@echo "✅ Cleanup complete"
-
-test-e2e-integration: ## Run comprehensive E2E integration tests with milestone tracking
-	@echo "🚀 Starting E2E Integration Test Suite..."
-	@echo "📊 Step 1: Ensuring Service Health Dashboard is running..."
-	@$(MAKE) coverage-up
-	@echo "🔗 Step 2: Connecting coverage reporter to development network..."
-	@docker network connect backsaas_backsaas-network backsaas-coverage-reporter 2>/dev/null || true
-	@echo "🔧 Step 3: Starting development environment..."
-	@$(MAKE) dev-up
-	@echo "⏳ Step 4: Waiting for services to be ready..."
-	@sleep 15
-	@echo "🧪 Step 5: Building E2E test runner..."
-	@cd tests/e2e && docker build -t backsaas-e2e-tests .
-	@echo "🎯 Step 6: Executing E2E integration tests..."
-	@docker run --rm --network backsaas_backsaas-network \
-		-v $(PWD)/tests/e2e/results:/workspace/tests/e2e/results \
-		-e PLATFORM_API_URL=http://platform-api:8080 \
-		-e GATEWAY_URL=http://gateway:3000 \
-		-e DASHBOARD_URL=http://backsaas-coverage-reporter:8090 \
-		backsaas-e2e-tests
-	@echo "📊 Step 7: Integration test results available at: http://localhost:8090/api/integration-tests"
-	@echo "✅ E2E Integration Tests completed!"
-
-test-e2e-clean: ## Clean E2E test artifacts
-	@echo "🧹 Cleaning E2E test artifacts..."
-	@docker rmi backsaas-e2e-tests 2>/dev/null || true
-	@rm -rf tests/e2e/results/* || true
-	@echo "✅ E2E cleanup complete"
-
-test-results: ## Start test results server
-	@echo "🌐 Starting test results server..."
-	@$(MAKE) -f Makefile.test test-results-server
-	@echo "📊 View results at: http://localhost:8888"
-
-test-e2e: ## Run CLI-based end-to-end platform tests
-	@echo "🎯 Running CLI-based end-to-end platform tests..."
+test-e2e: ## Run E2E integration tests
 	@$(MAKE) -f Makefile.test test-e2e
 
-test-cli-platform: ## Run CLI platform tests within Docker network
-	@echo "🏗️  Running CLI platform tests..."
-	@$(MAKE) -f Makefile.test test-cli-platform
+test-quick: ## Quick unit tests (smoke tests)
+	@$(MAKE) -f Makefile.test test-smoke
 
-test-cli-tenant-lifecycle: ## Run CLI tenant lifecycle tests
-	@echo "🏢 Running CLI tenant lifecycle tests..."
-	@$(MAKE) -f Makefile.test test-cli-tenant-lifecycle
+test-report: ## Generate test report
+	@echo "📊 Collecting latest test data..."
+	@curl -s http://localhost:8090/api/collect -X POST >/dev/null || echo "⚠️  Dashboard collection failed"
+	@sleep 2
+	@echo "📊 Test Report:"
+	@curl -s http://localhost:8090/api/services | jq '{services: keys, avg_coverage: ([.[] | .overall] | add / length | floor)}' 2>/dev/null || echo "Dashboard not available"
 
-# Legacy test targets (for backward compatibility)
-test-platform-api: ## Test Platform API service (legacy)
-	@echo "⚠️  Using legacy test method. Consider using 'make test-unit' instead."
-	cd services/platform-api && $(MAKE) test
+# === HEALTH ===
+health: ## Check service health
+	@echo "🏥 Service Health:"
+	@echo -n "Platform API: " && curl -s http://localhost:8080/health | jq -r '.status // "❌ Down"' 2>/dev/null || echo "❌ Down"
+	@echo -n "Gateway: " && curl -s http://localhost:8000/health | jq -r '.status // "❌ Down"' 2>/dev/null || echo "❌ Down"
+	@echo -n "Health Dashboard: " && curl -s http://localhost:8090/ >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Down"
+	@echo -n "Database: " && docker compose exec postgres pg_isready -U postgres >/dev/null 2>&1 && echo "✅ Healthy" || echo "❌ Down"
 
-test-gateway: ## Test Gateway service (legacy)
-	@echo "⚠️  Using legacy test method. Consider using 'make test-unit' instead."
-	cd services/gateway && $(MAKE) test
+dashboard: ## Open health dashboard
+	@echo "📊 BackSaaS Health Dashboard"
+	@echo "🌐 Dashboard: http://localhost:8090"
+	@echo "💡 Use 'make up' to start all services including dashboard"
 
-test-web: ## Test Web UI (legacy)
-	@echo "⚠️  Using legacy test method. Consider using 'make test-unit' instead."
-	@if [ -d "apps/web" ]; then \
-		cd apps/web && docker run --rm -v $(PWD)/apps/web:/app -w /app $(NODE_IMAGE) npm test; \
-	else \
-		echo "Skipping Web UI tests (apps/web not found)"; \
-	fi
+admin: ## Open admin console
+	@echo "🏗️ BackSaaS Admin Console"
+	@echo "🌐 Login: http://localhost:8080/admin/login"
+	@echo "👤 Username: admin"
+	@echo "🔑 Password: admin123"
+	@echo "💡 Use 'make up' to start all services first"
 
-# Development targets
-dev: dev-up ## Start development environment with Docker Compose (alias for dev-up)
+dashboard-update: ## Update dashboard with latest test data
+	@echo "🔄 Updating health dashboard with latest data..."
+	@curl -s http://localhost:8090/api/collect -X POST >/dev/null && echo "✅ Dashboard updated" || echo "❌ Update failed"
 
-dev-up: ## Start complete development environment with Docker Compose
-	@echo "🚀 Starting BackSaas development environment..."
-	@echo "📊 Services will be available at:"
-	@echo "  - Platform API: http://localhost:8080"
-	@echo "  - API Gateway: http://localhost:8000"
-	@echo "  - Test Tenant API: http://localhost:8081"
-	@echo "  - Database Admin: http://localhost:8082"
-	@echo "  - Prometheus: http://localhost:9090 (with --profile monitoring)"
-	@echo "  - Grafana: http://localhost:3001 (with --profile monitoring)"
-	@echo ""
-	@echo "💡 Use 'make dev-logs' to see logs, 'make dev-down' to stop"
-	docker compose up --build -d
+# === DATABASE ===
+db-reset: ## Reset database
+	@echo "🗄️ Resetting database..."
+	docker compose down postgres
+	docker volume rm backsaas_postgres_data 2>/dev/null || true
+	docker compose up -d postgres
+	@echo "⏳ Waiting for database..."
+	@sleep 10
+	@echo "✅ Database reset"
 
-dev-down: ## Stop development environment
-	@echo "🛑 Stopping BackSaas development environment..."
-	docker compose down
+db-shell: ## Connect to database
+	docker compose exec postgres psql -U postgres -d backsaas
 
-dev-logs: ## Show logs from development environment
-	@echo "📋 Showing logs from all services (Ctrl+C to exit)..."
-	docker compose logs -f
-
-dev-status: ## Show status of development services
-	@echo "📊 BackSaas Development Environment Status:"
-	@echo "==========================================="
-	docker compose ps
-
-dev-monitoring: ## Start development environment with monitoring
-	@echo "🚀 Starting BackSaas with monitoring (Prometheus + Grafana)..."
-	docker compose --profile monitoring up --build -d
-
-dev-db-only: ## Start only database services
-	@echo "🗄️ Starting only database services..."
-	docker compose up postgres redis adminer -d
-
-dev-platform-api: ## Start Platform API in development mode
-	@echo "Starting Platform API development server..."
-	cd services/platform-api && $(MAKE) dev
-
-dev-gateway: ## Start Gateway in development mode
-	@echo "Starting Gateway development server..."
-	cd services/gateway && $(MAKE) run-dev
-
-dev-web: ## Start Web UI in development mode
-	@echo "Starting Web UI development server..."
-	@if [ -d "apps/web" ]; then \
-		cd apps/web && docker run --rm -v $(PWD)/apps/web:/app -w /app $(NODE_IMAGE) npm run dev; \
-	else \
-		echo "Skipping Web UI dev (apps/web not found)"; \
-	fi
-
-# Utility targets
-clean: ## Clean all build artifacts
-	@echo "Cleaning build artifacts..."
-	cd services/platform-api && make clean
-	cd services/gateway && make clean
-	@if [ -d "apps/web" ]; then \
-		cd apps/web && $(DOCKER_NODE) npm run clean || true; \
-	fi
+# === CLEANUP ===
+clean: ## Clean containers and volumes
+	@echo "🧹 Cleaning up..."
+	docker compose down -v
 	docker system prune -f
+	@echo "✅ Cleanup complete"
 
-clean-db: ## Clean up database containers
-	@echo "Cleaning up database containers..."
-	@docker stop backsaas-db || true
-	@docker rm backsaas-db || true
+# === DEVELOPMENT HELPERS ===
+shell-api: ## Shell into platform-api
+	docker compose exec platform-api sh
 
-format: ## Format all code using Docker containers
-	@echo "Formatting all code in Docker containers..."
-	# NOTE: Go formatting in Docker
-	cd services/platform-api && $(DOCKER_GO) make format
-	# NOTE: Node.js formatting in Docker
-	cd apps/web && $(DOCKER_NODE) npm run format || true
+shell-gateway: ## Shell into gateway
+	docker compose exec gateway sh
 
-lint: ## Lint all code using Docker containers
-	@echo "Linting all code in Docker containers..."
-	# NOTE: Go linting in Docker
-	cd services/platform-api && $(DOCKER_GO) make lint
-	# NOTE: Node.js linting in Docker
-	cd apps/web && $(DOCKER_NODE) npm run lint || true
+shell-admin: ## Shell into admin console
+	docker compose exec admin-console sh
 
-# Docker targets
-docker-build: ## Build all Docker images
-	@echo "Building all Docker images..."
-	docker build -t backsaas/platform-api ./services/platform-api
-	docker build -t backsaas/web ./apps/web
+shell-db: ## Shell into database
+	docker compose exec postgres sh
 
-docker-up: ## Start all services with Docker Compose
-	@echo "Starting all services with Docker Compose..."
-	docker compose up --build -d
-
-docker-down: ## Stop all services
-	@echo "Stopping all services..."
-	docker compose down
-
-docker-logs: ## Show logs from all services
-	docker compose logs -f
-
-# Database management
-db-migrate: ## Run database migrations using Docker
-	@echo "Running database migrations in Docker container..."
-	# NOTE: Using Docker container for database operations
-	$(DOCKER_GO) sh -c "cd services/migrator && go run . migrate"
-
-db-seed: ## Seed database with test data using Docker
-	@echo "Seeding database with test data..."
-	$(DOCKER_GO) sh -c "cd services/migrator && go run . seed"
-
-db-reset: ## Reset database (clean + setup)
-	$(MAKE) clean-db
-	$(MAKE) setup-db
-
-# Monitoring and debugging
-logs: ## Show logs from development environment
-	docker compose logs -f
-
-ps: ## Show running containers
-	docker compose ps
-
-# Check tools
-check-tools: ## Check if required tools are installed
-	@echo "Checking required tools..."
-	@command -v docker >/dev/null 2>&1 || { echo "Docker is required but not installed"; exit 1; }
-	@docker compose version >/dev/null 2>&1 || { echo "Docker Compose is required but not installed"; exit 1; }
-	@echo "All required tools are installed!"
-	@echo "NOTE: Go, Node.js, and other tools will run in Docker containers"
-
-# Show configuration
-show-config: ## Show current configuration
-	@echo "BackSaas Configuration:"
-	@echo "======================"
-	@echo "  Go Image: $(GO_IMAGE)"
-	@echo "  Node Image: $(NODE_IMAGE)"
-	@echo "  Postgres Image: $(POSTGRES_IMAGE)"
-	@echo "  Docker Go Command: $(DOCKER_GO)"
-	@echo "  Docker Node Command: $(DOCKER_NODE)"
-	@echo ""
-	@echo "Services:"
-	@echo "  - Platform API: services/platform-api"
-	@echo "  - Web UI: apps/web"
-	@echo "  - Migrator: services/migrator"
-	@echo ""
-	@echo "NOTE: All development happens in Docker containers!"
-
-# Development workflow helpers
-quick-start: ## Quick start for new developers
-	@echo "BackSaas Quick Start Guide"
+admin: ## Display admin console access info
+	@echo "🔐 BackSaaS Admin Console"
 	@echo "========================="
 	@echo ""
-	@echo "1. Check tools: make check-tools"
-	@echo "2. Setup environment: make setup"
-	@echo "3. Start development: make dev"
+	@echo "🌐 URL: http://localhost:3000"
+	@echo "📧 Email: admin@backsaas.dev"
+	@echo "🔑 Password: admin123"
 	@echo ""
-	@echo "NOTE: Everything runs in Docker - no local installs needed!"
+	@echo "🚀 Quick Start:"
+	@echo "  make up          # Start all services"
+	@echo "  make logs-admin  # View admin console logs"
+	@echo "  make restart-admin # Restart admin console"
 
-# Reset everything
-reset: ## Reset entire development environment
-	@echo "Resetting entire development environment..."
-	$(MAKE) clean
-	$(MAKE) clean-db
-	docker system prune -f
-	@echo "✅ Environment reset complete"
-
-# Coverage Reporter Commands
-coverage-up: ## Start coverage reporter service
-	@echo "🚀 Starting coverage reporter service..."
-	docker compose -f docker-compose.test.yml --profile coverage up -d coverage-reporter
-	@echo "📊 Coverage dashboard available at: http://localhost:8090"
-	@echo "🔍 API available at: http://localhost:8090/api"
-
-coverage-down: ## Stop coverage reporter service
-	@echo "🛑 Stopping coverage reporter service..."
-	docker compose -f docker-compose.test.yml --profile coverage down
-
-coverage-logs: ## View coverage reporter logs
-	@echo "📋 Coverage reporter logs:"
-	docker compose -f docker-compose.test.yml logs -f coverage-reporter
-
-coverage-collect: ## Collect coverage for all services
-	@echo "🔍 Collecting coverage for all services..."
-	@curl -X POST http://localhost:8090/api/collect || echo "❌ Coverage reporter not running. Start with: make coverage-up"
-
-coverage-report: ## Open coverage report in browser
-	@echo "📊 Opening coverage report..."
-	@echo "Dashboard: http://localhost:8090"
-	@which xdg-open >/dev/null 2>&1 && xdg-open http://localhost:8090 || echo "Open http://localhost:8090 in your browser"!
+# === LEGACY ALIASES ===
+dev: up
+dev-up: up
+dev-down: down
+dev-logs: logs
+dev-status: status
