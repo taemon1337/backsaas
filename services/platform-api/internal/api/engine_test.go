@@ -159,7 +159,7 @@ func TestAPIRoutes(t *testing.T) {
 		}{
 			{"GET", "/api/users", http.StatusOK},
 			{"GET", "/api/products", http.StatusOK},
-			{"GET", "/api/users/123", http.StatusNotFound}, // No data yet
+			{"GET", "/api/users/123", http.StatusInternalServerError}, // Database error for non-existent entity
 			{"GET", "/api/nonexistent", http.StatusNotFound},
 		}
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -56,8 +57,10 @@ func (d *DatabaseOperations) buildCreateTableSQL(entityName string, entity *sche
 	keyColumn := fmt.Sprintf("%s VARCHAR(255) PRIMARY KEY", entity.Key)
 	columns = append(columns, keyColumn)
 	
-	// Add tenant_id column for multi-tenancy
-	columns = append(columns, "tenant_id VARCHAR(255) NOT NULL")
+	// Add tenant_id column for multi-tenancy only if not already defined in schema
+	if _, exists := entity.Schema.Properties["tenant_id"]; !exists {
+		columns = append(columns, "tenant_id VARCHAR(255) NOT NULL")
+	}
 	
 	// Add columns for each property in sorted order for consistency
 	var propNames []string
@@ -82,9 +85,13 @@ func (d *DatabaseOperations) buildCreateTableSQL(entityName string, entity *sche
 		columns = append(columns, columnDef)
 	}
 	
-	// Add audit columns
-	columns = append(columns, "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
-	columns = append(columns, "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	// Add audit columns only if not already defined in schema
+	if _, exists := entity.Schema.Properties["created_at"]; !exists {
+		columns = append(columns, "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	}
+	if _, exists := entity.Schema.Properties["updated_at"]; !exists {
+		columns = append(columns, "updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+	}
 	
 	// Build the complete SQL
 	sqlQuery := fmt.Sprintf(`
@@ -153,26 +160,57 @@ func (d *DatabaseOperations) InsertEntity(entityName string, entity *schema.Enti
 	
 	// Add audit fields - truncate to microsecond precision to match PostgreSQL
 	now := time.Now().Truncate(time.Microsecond)
-	insertData["created_at"] = now
-	insertData["updated_at"] = now
-	insertData["tenant_id"] = d.tenantID
+	
+	// Add audit fields only if not already provided and not defined in schema
+	if _, exists := insertData["created_at"]; !exists && entity.Schema.Properties["created_at"] == nil {
+		insertData["created_at"] = now
+	}
+	if _, exists := insertData["updated_at"]; !exists {
+		insertData["updated_at"] = now
+	}
+	
+	// Add tenant_id only if not already provided and not defined in schema
+	if _, exists := insertData["tenant_id"]; !exists {
+		insertData["tenant_id"] = d.tenantID
+	} else {
+		// If tenant_id is provided, ensure it matches the current tenant for security
+		insertData["tenant_id"] = d.tenantID
+	}
 	
 	// Generate ID if not provided
 	if insertData[entity.Key] == nil {
 		insertData[entity.Key] = d.generateID()
 	}
 	
-	// Build INSERT statement
-	columns := make([]string, 0, len(insertData))
-	placeholders := make([]string, 0, len(insertData))
-	values := make([]interface{}, 0, len(insertData))
+	// Serialize complex types (arrays, objects) to JSON for PostgreSQL
+	for key, value := range insertData {
+		if propDef, exists := entity.Schema.Properties[key]; exists {
+			if propDef.Type == "array" || propDef.Type == "object" {
+				if value != nil {
+					jsonBytes, err := json.Marshal(value)
+					if err != nil {
+						return nil, fmt.Errorf("failed to serialize %s: %w", key, err)
+					}
+					insertData[key] = string(jsonBytes)
+				}
+			}
+		}
+	}
+	
+	// Get expected column order to ensure consistent insertion
+	expectedColumns := d.getEntityColumns(entity)
+	columns := make([]string, 0, len(expectedColumns))
+	placeholders := make([]string, 0, len(expectedColumns))
+	values := make([]interface{}, 0, len(expectedColumns))
 	
 	i := 1
-	for key, value := range insertData {
-		columns = append(columns, key)
-		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
-		values = append(values, value)
-		i++
+	for _, col := range expectedColumns {
+		if value, exists := insertData[col]; exists {
+			columns = append(columns, col)
+			placeholders = append(placeholders, fmt.Sprintf("$%d", i))
+			values = append(values, value)
+			i++
+		}
 	}
 	
 	sqlQuery := fmt.Sprintf(
@@ -196,24 +234,48 @@ func (d *DatabaseOperations) InsertEntity(entityName string, entity *schema.Enti
 
 // UpdateEntity updates an existing entity in the database
 func (d *DatabaseOperations) UpdateEntity(entityName string, entity *schema.Entity, id string, data map[string]interface{}) (map[string]interface{}, error) {
+	// Create a copy to avoid mutating the original
+	updateData := make(map[string]interface{})
+	for k, v := range data {
+		updateData[k] = v
+	}
+	
 	// Add audit fields - truncate to microsecond precision to match PostgreSQL
-	data["updated_at"] = time.Now().Truncate(time.Microsecond)
+	// Only add updated_at if it's not already in the data
+	if _, exists := updateData["updated_at"]; !exists {
+		updateData["updated_at"] = time.Now().Truncate(time.Microsecond)
+	}
 	
 	// Remove key and tenant_id from update data
-	delete(data, entity.Key)
-	delete(data, "tenant_id")
-	delete(data, "created_at") // Don't allow updating created_at
+	delete(updateData, entity.Key)
+	delete(updateData, "tenant_id")
+	delete(updateData, "created_at") // Don't allow updating created_at
 	
-	if len(data) == 0 {
+	if len(updateData) == 0 {
 		return nil, fmt.Errorf("no fields to update")
 	}
 	
+	// Serialize complex types (arrays, objects) to JSON for PostgreSQL
+	for key, value := range updateData {
+		if propDef, exists := entity.Schema.Properties[key]; exists {
+			if propDef.Type == "array" || propDef.Type == "object" {
+				if value != nil {
+					jsonBytes, err := json.Marshal(value)
+					if err != nil {
+						return nil, fmt.Errorf("failed to serialize %s: %w", key, err)
+					}
+					updateData[key] = string(jsonBytes)
+				}
+			}
+		}
+	}
+	
 	// Build UPDATE statement
-	setParts := make([]string, 0, len(data))
-	values := make([]interface{}, 0, len(data)+2)
+	setParts := make([]string, 0, len(updateData))
+	values := make([]interface{}, 0, len(updateData)+2)
 	
 	i := 1
-	for key, value := range data {
+	for key, value := range updateData {
 		setParts = append(setParts, fmt.Sprintf("%s = $%d", key, i))
 		values = append(values, value)
 		i++
@@ -368,6 +430,18 @@ func (d *DatabaseOperations) rowToMap(row *sql.Row, entity *schema.Entity) (map[
 			val = t.UTC().Truncate(time.Microsecond)
 		}
 		
+		// Deserialize JSON fields back to Go types
+		if propDef, exists := entity.Schema.Properties[col]; exists {
+			if propDef.Type == "array" || propDef.Type == "object" {
+				if strVal, ok := val.(string); ok && strVal != "" {
+					var jsonVal interface{}
+					if err := json.Unmarshal([]byte(strVal), &jsonVal); err == nil {
+						val = jsonVal
+					}
+				}
+			}
+		}
+		
 		result[col] = val
 	}
 	
@@ -415,6 +489,18 @@ func (d *DatabaseOperations) rowsToMaps(rows *sql.Rows, entity *schema.Entity) (
 				val = t.UTC().Truncate(time.Microsecond)
 			}
 			
+			// Deserialize JSON fields back to Go types
+			if propDef, exists := entity.Schema.Properties[col]; exists {
+				if propDef.Type == "array" || propDef.Type == "object" {
+					if strVal, ok := val.(string); ok && strVal != "" {
+						var jsonVal interface{}
+						if err := json.Unmarshal([]byte(strVal), &jsonVal); err == nil {
+							val = jsonVal
+						}
+					}
+				}
+			}
+			
 			result[col] = val
 		}
 		
@@ -426,7 +512,12 @@ func (d *DatabaseOperations) rowsToMaps(rows *sql.Rows, entity *schema.Entity) (
 
 // getEntityColumns returns the expected column names for an entity in the same order as table creation
 func (d *DatabaseOperations) getEntityColumns(entity *schema.Entity) []string {
-	columns := []string{entity.Key, "tenant_id"}
+	columns := []string{entity.Key}
+	
+	// Add tenant_id only if not already defined in schema properties
+	if _, exists := entity.Schema.Properties["tenant_id"]; !exists {
+		columns = append(columns, "tenant_id")
+	}
 	
 	// Get property names in sorted order for consistency
 	var propNames []string
@@ -447,7 +538,15 @@ func (d *DatabaseOperations) getEntityColumns(entity *schema.Entity) []string {
 	}
 	
 	columns = append(columns, propNames...)
-	columns = append(columns, "created_at", "updated_at")
+	
+	// Add audit columns only if not already defined in schema
+	if _, exists := entity.Schema.Properties["created_at"]; !exists {
+		columns = append(columns, "created_at")
+	}
+	if _, exists := entity.Schema.Properties["updated_at"]; !exists {
+		columns = append(columns, "updated_at")
+	}
+	
 	return columns
 }
 
