@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect } from 'react'
-import { useHealthSummary, useHealthServices, useHealthStatus, useApiMutation } from '@/lib/hooks/use-api'
+import { useQuery } from '@tanstack/react-query'
+import { apiClient } from '@/lib/api-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -52,58 +53,80 @@ interface SystemStatus {
 
 export default function SystemHealthPage() {
   const { toast } = useToast()
+  const [triggering, setTriggering] = useState(false)
   
-  // Use API hooks for data fetching
+  // Use React Query for data fetching
   const { 
     data: summary, 
-    loading: summaryLoading, 
+    isLoading: summaryLoading, 
     error: summaryError, 
     refetch: refetchSummary 
-  } = useHealthSummary()
+  } = useQuery({
+    queryKey: ['health-summary'],
+    queryFn: () => apiClient.getHealthSummary(),
+    refetchInterval: 30000,
+  })
   
   const { 
     data: servicesData, 
-    loading: servicesLoading, 
+    isLoading: servicesLoading, 
     error: servicesError, 
     refetch: refetchServices 
-  } = useHealthServices()
+  } = useQuery({
+    queryKey: ['health-services'],
+    queryFn: () => apiClient.getHealthServices(),
+    refetchInterval: 30000,
+  })
   
   const { 
     data: status, 
-    loading: statusLoading, 
+    isLoading: statusLoading, 
     error: statusError, 
     refetch: refetchStatus 
-  } = useHealthStatus()
-
-  // Mutation hook for triggering collection
-  const { mutate: triggerMutation, loading: triggering } = useApiMutation()
+  } = useQuery({
+    queryKey: ['health-status'],
+    queryFn: () => apiClient.getHealthStatus(),
+    refetchInterval: 30000,
+  })
 
   // Combine loading states
   const loading = summaryLoading || servicesLoading || statusLoading
   const refreshing = triggering
 
-  // Convert services data to array format
-  const services = Array.isArray(servicesData) ? servicesData : []
+  // Convert services data to array format for display
+  const services = summary?.services ? Object.entries(summary.services).map(([name, coverage]) => ({
+    name: name.charAt(0).toUpperCase() + name.slice(1),
+    coverage: coverage as number,
+    lines_covered: Math.floor((coverage as number) * summary.total_lines / 100 / Object.keys(summary.services).length),
+    lines_total: Math.floor(summary.total_lines / Object.keys(summary.services).length),
+    last_updated: summary.timestamp,
+    status: (coverage as number) > 15 ? 'healthy' : 'warning'
+  })) : []
 
   const fetchHealthData = async () => {
     await Promise.all([refetchSummary(), refetchServices(), refetchStatus()])
   }
 
   const triggerCollection = async () => {
-    const { apiClient } = await import('@/lib/api-client')
-    
-    const result = await triggerMutation(
-      () => apiClient.triggerCoverageCollection(),
-      undefined
-    )
-    
-    if (result) {
+    setTriggering(true)
+    try {
+      const result = await apiClient.triggerCoverageCollection()
+      
       toast({
         title: "Collection Started",
-        description: (result as any).message || "Coverage collection has been triggered for all services",
+        description: result.message || "Coverage collection has been triggered for all services",
       })
+      
       // Refresh data after a short delay
       setTimeout(fetchHealthData, 2000)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to trigger coverage collection",
+        variant: "destructive",
+      })
+    } finally {
+      setTriggering(false)
     }
   }
 
@@ -155,6 +178,16 @@ export default function SystemHealthPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
+          <div className="flex items-center space-x-2 mb-2">
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              className="text-slate-400 hover:text-white p-0"
+              onClick={() => window.location.href = '/admin/dashboard'}
+            >
+              ← Back to Dashboard
+            </Button>
+          </div>
           <h1 className="text-2xl font-bold text-white">System Health</h1>
           <p className="text-slate-400">Monitor service health, coverage, and performance</p>
         </div>
@@ -231,6 +264,46 @@ export default function SystemHealthPage() {
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {/* Service Status Overview */}
+      {status && (
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-white">Service Status</CardTitle>
+            <CardDescription className="text-slate-400">
+              Real-time status and collection activity
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {Object.entries(status.services).map(([name, serviceStatus]) => (
+                <div key={name} className="p-4 bg-slate-700/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="font-medium text-white capitalize">{name}</h3>
+                    {serviceStatus.collecting ? (
+                      <RefreshCw className="h-4 w-4 animate-spin text-blue-500" />
+                    ) : (
+                      <CheckCircle className="h-4 w-4 text-green-500" />
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Status:</span>
+                      <span className={serviceStatus.collecting ? 'text-blue-400' : 'text-green-400'}>
+                        {serviceStatus.collecting ? 'Collecting' : 'Ready'}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Priority:</span>
+                      <span className="text-slate-300">{serviceStatus.priority}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Services List */}

@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { apiClient } from '@/lib/api'
+import { apiClient } from '@/lib/api-client'
 import { 
   Users, 
   Database, 
@@ -12,7 +12,8 @@ import {
   TrendingUp, 
   AlertTriangle,
   CheckCircle,
-  XCircle
+  XCircle,
+  Zap
 } from 'lucide-react'
 import { formatNumber, formatCurrency, getStatusColor } from '@/lib/utils'
 
@@ -33,34 +34,42 @@ export default function DashboardPage() {
     queryFn: () => apiClient.getAnalytics(),
   })
 
+  const { data: gatewayMetrics } = useQuery({
+    queryKey: ['gateway-metrics-summary'],
+    queryFn: () => apiClient.getGatewayMetrics(),
+    refetchInterval: 30000, // Refresh every 30 seconds
+  })
+
   const stats = [
     {
-      title: "Total Tenants",
-      value: tenantsData?.data?.total || 0,
-      change: "+12%",
-      icon: Users,
+      title: "Total Requests",
+      value: formatNumber(gatewayMetrics?.requests?.total || 0),
+      change: "Live",
+      icon: Activity,
       color: "text-blue-600",
     },
     {
-      title: "Active Schemas",
-      value: 24,
-      change: "+3%",
-      icon: Database,
+      title: "Success Rate",
+      value: gatewayMetrics?.requests ? 
+        `${((gatewayMetrics.requests.by_status['200'] || 0) / gatewayMetrics.requests.total * 100).toFixed(1)}%` : 
+        "0%",
+      change: "Current",
+      icon: CheckCircle,
       color: "text-green-600",
     },
     {
-      title: "API Calls Today",
-      value: formatNumber(125430),
-      change: "+8%",
-      icon: Activity,
+      title: "Avg Response",
+      value: `${gatewayMetrics?.requests?.average_response_time_ms || 0}ms`,
+      change: "Real-time",
+      icon: Zap,
       color: "text-purple-600",
     },
     {
-      title: "Monthly Revenue",
-      value: formatCurrency(45230),
-      change: "+15%",
-      icon: DollarSign,
-      color: "text-emerald-600",
+      title: "Total Errors",
+      value: formatNumber(gatewayMetrics?.errors?.total || 0),
+      change: gatewayMetrics?.errors?.total > 0 ? "Monitor" : "Good",
+      icon: gatewayMetrics?.errors?.total > 0 ? AlertTriangle : CheckCircle,
+      color: gatewayMetrics?.errors?.total > 0 ? "text-yellow-600" : "text-emerald-600",
     },
   ]
 
@@ -130,9 +139,19 @@ export default function DashboardPage() {
         {/* System Health */}
         <Card className="bg-slate-800 border-slate-700">
           <CardHeader>
-            <CardTitle className="text-white flex items-center">
-              <Activity className="h-5 w-5 mr-2" />
-              System Health
+            <CardTitle className="text-white flex items-center justify-between">
+              <div className="flex items-center">
+                <Activity className="h-5 w-5 mr-2" />
+                System Health
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="text-blue-400 hover:text-blue-300"
+                onClick={() => window.location.href = '/admin/dashboard/health'}
+              >
+                View Details →
+              </Button>
             </CardTitle>
             <CardDescription>
               Real-time status of platform services
@@ -236,9 +255,13 @@ export default function DashboardPage() {
               <Database className="h-6 w-6 mb-2" />
               <span>New Schema</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col border-slate-600 hover:bg-slate-700">
+            <Button 
+              variant="outline" 
+              className="h-20 flex-col border-slate-600 hover:bg-slate-700"
+              onClick={() => window.location.href = '/admin/dashboard/analytics'}
+            >
               <Activity className="h-6 w-6 mb-2" />
-              <span>System Report</span>
+              <span>Analytics</span>
             </Button>
           </div>
         </CardContent>

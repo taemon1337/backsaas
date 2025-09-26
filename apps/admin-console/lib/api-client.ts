@@ -226,6 +226,66 @@ class ApiClient {
     })
   }
 
+  async getSystemHealth(): Promise<any> {
+    try {
+      const [summary, services, status] = await Promise.all([
+        this.getHealthSummary(),
+        this.getHealthServices(), 
+        this.getHealthStatus()
+      ])
+
+      // Determine overall health status based on coverage and service status
+      const overallCoverage = summary.overall_coverage || 0
+      const serviceStatuses = Object.values(status.services || {}) as any[]
+      const allServicesHealthy = serviceStatuses.every(service => !service.collecting)
+      
+      let healthStatus = 'healthy'
+      if (overallCoverage < 20) {
+        healthStatus = 'warning'
+      }
+      if (overallCoverage < 10) {
+        healthStatus = 'critical'
+      }
+
+      // Format services for dashboard display
+      const formattedServices = Object.entries(summary.services || {}).map(([name, coverage]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        status: (coverage as number) > 15 ? 'up' : 'warning',
+        coverage: `${(coverage as number).toFixed(1)}%`,
+        response_time: Math.floor(Math.random() * 100) + 50 // Mock response time
+      }))
+
+      return {
+        data: {
+          status: healthStatus,
+          overall_coverage: overallCoverage,
+          services: formattedServices,
+          summary,
+          raw_status: status
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch system health:', error)
+      return {
+        data: {
+          status: 'unknown',
+          services: [],
+          overall_coverage: 0
+        }
+      }
+    }
+  }
+
+  // ============================================================================
+  // GATEWAY METRICS API
+  // ============================================================================
+
+  async getGatewayMetrics(): Promise<any> {
+    return this.makeRequest('/metrics', {
+      requireAuth: false, // Metrics endpoint is public
+    })
+  }
+
   // ============================================================================
   // TENANT MANAGEMENT API
   // ============================================================================
