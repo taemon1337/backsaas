@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Default theme colors */
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+
+    /* Tenant-customizable brand colors (defaults) */
+    --tenant-primary: #3b82f6;
+    --tenant-secondary: #64748b;
+    --tenant-accent: #f59e0b;
+    --tenant-background: #ffffff;
+    --tenant-surface: #f8fafc;
+    --tenant-text: #1e293b;
+
+    /* Tenant-customizable fonts (defaults) */
+    --tenant-font-heading: 'Inter', system-ui, sans-serif;
+    --tenant-font-body: 'Inter', system-ui, sans-serif;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+
+    /* Dark theme tenant colors */
+    --tenant-primary: #60a5fa;
+    --tenant-secondary: #94a3b8;
+    --tenant-accent: #fbbf24;
+    --tenant-background: #0f172a;
+    --tenant-surface: #1e293b;
+    --tenant-text: #f1f5f9;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--tenant-font-body);
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--tenant-font-heading);
+  }
+}
+
+/* Tenant branding utilities */
+.tenant-primary {
+  color: var(--tenant-primary);
+}
+
+.tenant-bg-primary {
+  background-color: var(--tenant-primary);
+}
+
+.tenant-border-primary {
+  border-color: var(--tenant-primary);
+}
+
+/* Custom scrollbar for tenant branding */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--tenant-primary);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--tenant-secondary);
+}
+
+/* Loading animations */
+@keyframes pulse-tenant {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse-tenant {
+  animation: pulse-tenant 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Form focus states with tenant colors */
+.form-input:focus {
+  border-color: var(--tenant-primary);
+  box-shadow: 0 0 0 3px rgba(var(--tenant-primary), 0.1);
+}
+
+/* Button variants with tenant colors */
+.btn-tenant-primary {
+  background-color: var(--tenant-primary);
+  color: var(--tenant-background);
+}
+
+.btn-tenant-primary:hover {
+  background-color: var(--tenant-secondary);
+}
+
+.btn-tenant-secondary {
+  background-color: var(--tenant-secondary);
+  color: var(--tenant-background);
+}
+
+.btn-tenant-outline {
+  border: 2px solid var(--tenant-primary);
+  color: var(--tenant-primary);
+  background-color: transparent;
+}
+
+.btn-tenant-outline:hover {
+  background-color: var(--tenant-primary);
+  color: var(--tenant-background);
+}

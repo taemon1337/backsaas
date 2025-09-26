@@ -1,11 +1,15 @@
-# Tenant UI
+# BackSaaS Tenant UI
 
-The **Tenant UI** is the business interface for BackSaas tenants, providing end users with schema-driven forms, dashboards, and workflows tailored to their specific business needs.
+The **Tenant UI** is the primary business interface for end users to manage their data, schemas, and workflows. Built with Next.js 14 and designed for multi-tenant SaaS applications.
 
 ## 🎯 Purpose
 
-This interface is designed for **tenant end users** who need to:
-
+This application provides a user-friendly interface for business users to:
+- **Manage Data**: View, create, edit, and delete business records
+- **Design Schemas**: Visual schema builder with embedded management
+- **Run Workflows**: Execute and monitor business processes
+- **View Analytics**: Business intelligence and reporting
+- **Team Management**: User roles and permissions
 - Work with their business data through schema-driven interfaces
 - Access custom dashboards and reports
 - Manage users within their tenant organization

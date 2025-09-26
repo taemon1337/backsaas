@@ -70,6 +70,26 @@ monitoring:
 
 # Route definitions
 routes:
+  # Landing Page - Static marketing site and platform entry point (HIGHEST PRIORITY)
+  - description: "Landing Page"
+    path_prefix: "/"
+    backend:
+      url: "http://landing-page:3002"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/"
+    auth:
+      enabled: false  # Public access
+    rate_limit:
+      enabled: true
+      requests_per_minute: 200
+      burst_size: 40
+    transform:
+      add_headers:
+        X-Interface-Type: "landing-page"
+        X-Gateway-Route: "landing-page"
+    enabled: true
+
   # Platform API (system tenant) - manages tenants, schemas, etc. - MOVED TO TOP FOR PRIORITY
   - description: "Platform Management API"
     path_prefix: "/api/platform"
@@ -166,6 +186,26 @@ routes:
       rewrite_path: "/"  # Remove /dashboard prefix when forwarding to backend
     enabled: true
 
+  # Control Plane Web UI - schema management interface
+  - description: "Control Plane Web UI"
+    path_prefix: "/control-plane"
+    backend:
+      url: "http://control-plane:3000"
+      timeout: "30s"
+      max_retries: 2
+      health_check_path: "/"
+    auth:
+      enabled: false  # Public access for development
+    rate_limit:
+      enabled: true
+      requests_per_minute: 200
+      burst_size: 40
+    transform:
+      add_headers:
+        X-Interface-Type: "control-plane"
+      # No strip_prefix - Next.js basePath handles /control-plane prefix
+    enabled: true
+
   # Tenant UI - business interface (disabled - service not implemented yet)
   - description: "Tenant UI"
     host: "*.backsaas.dev"
@@ -187,17 +227,17 @@ routes:
         X-Interface-Type: "tenant-ui"
     enabled: false
 
-  # Tenant UI (path-based routing alternative) (disabled - service not implemented yet)
+  # Tenant UI (path-based routing) - Business interface for end users
   - description: "Tenant UI Path-based"
-    path_prefix: "/app"
+    path_prefix: "/ui"
     backend:
       url: "http://tenant-ui:3001"
       timeout: "30s"
       max_retries: 2
-      health_check_path: "/api/health"
+      health_check_path: "/"
     auth:
-      enabled: true
-      required: true
+      enabled: false  # Let tenant-ui handle its own auth for now
+      required: false
     rate_limit:
       enabled: true
       requests_per_minute: 500
@@ -205,8 +245,9 @@ routes:
     transform:
       add_headers:
         X-Interface-Type: "tenant-ui"
-      rewrite_path: "/"
-    enabled: false
+        X-Gateway-Route: "tenant-ui-path"
+      # No strip_prefix - Next.js basePath will handle /ui prefix
+    enabled: true
 
 
   # Tenant API routing by subdomain (disabled - using existing test-tenant-api service)

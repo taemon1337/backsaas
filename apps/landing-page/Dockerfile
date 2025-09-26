@@ -1,3 +1,4 @@
+# Development Dockerfile for Landing Page
 FROM node:18-alpine
 
 WORKDIR /app
@@ -12,7 +13,7 @@ RUN npm install
 COPY . .
 
 # Expose port
-EXPOSE 3000
+EXPOSE 3002
 
 # Start development server
 CMD ["npm", "run", "dev"]

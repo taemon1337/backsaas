@@ -136,6 +136,95 @@ services:
     networks:
       - backsaas-network
 
+  # Control Plane Web UI (Schema Designer)
+  control-plane:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile.dev
+    container_name: backsaas-control-plane
+    # No exposed ports - access through gateway only
+    environment:
+      - NODE_ENV=development
+      - PLATFORM_API_URL=http://platform-api:8080
+      - GATEWAY_API_URL=http://gateway:8000
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key}
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      platform-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 45s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    networks:
+      - backsaas-network
+
+  # Tenant UI - Business interface for end users
+  tenant-ui:
+    build:
+      context: ./apps/tenant-ui
+      dockerfile: Dockerfile.dev
+    container_name: backsaas-tenant-ui
+    # No exposed ports - access through gateway only
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_GATEWAY_API_URL=http://localhost:8000
+      - PLATFORM_API_URL=http://platform-api:8080
+      - GATEWAY_API_URL=http://gateway:8000
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key}
+    volumes:
+      - ./apps/tenant-ui:/app
+      - /app/node_modules
+      - /app/.next
+    depends_on:
+      platform-api:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001"]
+      interval: 45s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    networks:
+      - backsaas-network
+
+  # Landing Page - Static marketing site and platform entry point
+  landing-page:
+    build:
+      context: ./apps/landing-page
+      dockerfile: Dockerfile
+    container_name: backsaas-landing-page
+    # No exposed ports - access through gateway only
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_GATEWAY_API_URL=http://localhost:8000
+    volumes:
+      - ./apps/landing-page:/app
+      - /app/node_modules
+      - /app/.next
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3002"]
+      interval: 45s
+      timeout: 20s
+      retries: 5
+      start_period: 60s
+    networks:
+      - backsaas-network
+
   # Health Dashboard (Coverage Reporter)
   health-dashboard:
     build:

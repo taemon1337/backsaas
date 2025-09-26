@@ -16,7 +16,7 @@ help: ## Show available commands
 # === CORE SERVICES ===
 up: ## Start all core services
 	@echo "🚀 Starting BackSaaS core services..."
-	docker compose up -d postgres redis platform-api gateway admin-console health-dashboard
+	docker compose up -d postgres redis platform-api gateway admin-console control-plane tenant-ui health-dashboard
 	@echo "✅ Services started! Check with 'make status'"
 
 down: ## Stop all services
@@ -26,7 +26,7 @@ down: ## Stop all services
 
 restart: ## Restart all core services
 	@echo "🔄 Restarting services..."
-	docker compose restart postgres redis platform-api gateway admin-console health-dashboard
+	docker compose restart postgres redis platform-api gateway admin-console control-plane health-dashboard
 	@echo "✅ Services restarted"
 
 # === SERVICE MANAGEMENT ===
@@ -41,6 +41,14 @@ restart-gateway: ## Restart gateway
 restart-admin: ## Restart admin console
 	@echo "🔄 Restarting admin console..."
 	docker compose restart admin-console
+
+restart-control-plane: ## Restart control plane
+	@echo "🔄 Restarting control plane..."
+	docker compose restart control-plane
+
+restart-tenant-ui: ## Restart tenant UI
+	@echo "🔄 Restarting tenant UI..."
+	docker compose restart tenant-ui
 
 restart-dashboard: ## Restart health dashboard
 	@echo "🔄 Restarting health dashboard..."
@@ -63,6 +71,12 @@ logs-gateway: ## Show gateway logs
 logs-admin: ## Show admin console logs
 	docker compose logs -f admin-console
 
+logs-control-plane: ## Show control plane logs
+	docker compose logs -f control-plane
+
+logs-tenant-ui: ## Show tenant UI logs
+	docker compose logs -f tenant-ui
+
 logs-dashboard: ## Show health dashboard logs
 	docker compose logs -f health-dashboard
 
@@ -77,7 +91,8 @@ status: ## Show service status
 	@echo "🌐 URLs:"
 	@echo "  Platform API:    http://localhost:8080"
 	@echo "  Gateway:         http://localhost:8000"
-	@echo "  Admin Console:   http://localhost:3000"
+	@echo "  Admin Console:   http://localhost:8000/admin"
+	@echo "  Control Plane:   http://localhost:8000/control-plane"
 	@echo "  Health Dashboard: http://localhost:8090"
 
 # === BUILDING ===
@@ -93,6 +108,12 @@ build-gateway: ## Build gateway
 
 build-admin: ## Build admin console
 	docker compose build admin-console
+
+build-control-plane: ## Build control plane
+	docker compose build control-plane
+
+build-tenant-ui: ## Build tenant UI
+	docker compose build tenant-ui
 
 # === TESTING ===
 test: ## Run complete test suite
@@ -183,19 +204,20 @@ shell-admin: ## Shell into admin console
 shell-db: ## Shell into database
 	docker compose exec postgres sh
 
-admin: ## Display admin console access info
-	@echo "🔐 BackSaaS Admin Console"
-	@echo "========================="
+admin: ## Show admin console access info
+	@echo "🔐 Admin Console Access"
+	@echo "======================="
+	@echo "URL: http://localhost:8000/admin"
+	@echo "Login: admin@backsaas.dev"
+	@echo "Password: admin123"
 	@echo ""
-	@echo "🌐 URL: http://localhost:3000"
-	@echo "📧 Email: admin@backsaas.dev"
-	@echo "🔑 Password: admin123"
-	@echo ""
-	@echo "🚀 Quick Start:"
-	@echo "  make up          # Start all services"
-	@echo "  make logs-admin  # View admin console logs"
-	@echo "  make restart-admin # Restart admin console"
 
+control-plane: ## Show control plane access info
+	@echo "🎛️ Control Plane Access"
+	@echo "======================="
+	@echo "URL: http://localhost:8000/control-plane"
+	@echo "Schema Designer & Migration Planner"
+	@echo ""
 # === LEGACY ALIASES ===
 dev: up
 dev-up: up
