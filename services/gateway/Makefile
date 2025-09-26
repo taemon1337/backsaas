@@ -21,7 +21,7 @@ GO_FILES=$(shell find . -name "*.go" -type f)
 # NOTE: Always run Go commands in Docker containers for consistency
 # Using full golang image (not alpine) to include git for go mod operations
 # Mount Go caches from host for faster builds and module downloads
-GO_IMAGE=golang:1.21
+GO_IMAGE=golang:1.25
 DOCKER_GO_RUN=docker run --rm \
 	-v $(PWD):/app \
 	-v $(HOME)/go/pkg/mod:/go/pkg/mod \

@@ -70,6 +70,42 @@ monitoring:
 
 # Route definitions
 routes:
+  # Platform API (system tenant) - manages tenants, schemas, etc. - MOVED TO TOP FOR PRIORITY
+  - description: "Platform Management API"
+    path_prefix: "/api/platform"
+    backend:
+      url: "http://platform-api:8080"
+      timeout: "30s"
+      max_retries: 3
+      health_check_path: "/health"
+    auth:
+      enabled: false  # Let platform-api handle its own authentication
+    rate_limit:
+      enabled: true
+      requests_per_minute: 200
+      burst_size: 50
+    enabled: true
+
+  # Health Dashboard API - system health and coverage data
+  - description: "System Health Dashboard API"
+    path_prefix: "/api/system-health"
+    backend:
+      url: "http://health-dashboard:8090"
+      timeout: "30s"
+      max_retries: 3
+      health_check_path: "/api/status"
+    transform:
+      strip_prefix: true  # Strip the path_prefix before forwarding
+      add_headers:
+        X-Interface-Type: "system-health"
+    auth:
+      enabled: true  # Require auth for system health data
+    rate_limit:
+      enabled: true
+      requests_per_minute: 100
+      burst_size: 20
+    enabled: true
+
   # Admin Console UI - platform management interface (host-based)
   - description: "Admin Console UI (Host-based)"
     host: "admin.backsaas.dev"
@@ -107,7 +143,7 @@ routes:
     transform:
       add_headers:
         X-Interface-Type: "admin-console"
-      # No rewrite_path - forward all /admin traffic as-is to Next.js
+      # No strip_prefix - Next.js basePath handles /admin prefix
     enabled: true
 
   # Health Dashboard - system monitoring interface
@@ -172,27 +208,11 @@ routes:
       rewrite_path: "/"
     enabled: false
 
-  # Platform API (system tenant) - manages tenants, schemas, etc.
-  - description: "Platform Management API"
-    tenant_id: "system"
-    path_prefix: "/api/platform"
-    backend:
-      url: "http://platform-api:8080"
-      timeout: "30s"
-      max_retries: 3
-      health_check_path: "/health"
-    auth:
-      enabled: false  # Let platform-api handle its own authentication
-    rate_limit:
-      enabled: true
-      requests_per_minute: 200
-      burst_size: 50
-    enabled: true
 
   # Tenant API routing by subdomain (disabled - using existing test-tenant-api service)
   - description: "Tenant API by Subdomain"
     host: "*.api.backsaas.dev"
-    path_prefix: "/api"
+    path_prefix: "/"
     backend:
       url: "http://test-tenant-api:8081"  # Tenant API service
       timeout: "30s"

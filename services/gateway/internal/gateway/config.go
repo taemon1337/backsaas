@@ -92,6 +92,7 @@ type AuthConfig struct {
 // TransformConfig defines request/response transformations
 type TransformConfig struct {
 	// Request transformations
+	StripPrefix    bool              `yaml:"strip_prefix,omitempty"`    // Strip the path_prefix before forwarding
 	AddHeaders     map[string]string `yaml:"add_headers,omitempty"`
 	RemoveHeaders  []string          `yaml:"remove_headers,omitempty"`
 	RewritePath    string            `yaml:"rewrite_path,omitempty"`

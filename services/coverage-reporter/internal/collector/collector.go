@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -96,10 +98,15 @@ func (c *Collector) CollectService(serviceName string) error {
 
 	log.Printf("🔍 Collecting coverage for service: %s", serviceName)
 
-	// Parse existing coverage data (no test execution)
-	coverageData, err := c.parseCoverage(serviceConfig)
+	// Generate fresh coverage data by running tests
+	coverageData, err := c.generateCoverage(serviceConfig)
 	if err != nil {
-		return fmt.Errorf("failed to parse coverage for %s: %w", serviceName, err)
+		// Fallback to parsing existing coverage data
+		log.Printf("⚠️  Failed to generate coverage for %s, trying to parse existing: %v", serviceName, err)
+		coverageData, err = c.parseCoverage(serviceConfig)
+		if err != nil {
+			return fmt.Errorf("failed to parse coverage for %s: %w", serviceName, err)
+		}
 	}
 
 	// Look for test results from existing test runs
@@ -328,11 +335,11 @@ func (c *Collector) checkServiceHealth(service *config.ServiceConfig) *storage.S
 	var endpoint string
 	switch service.Name {
 	case "api":
-		endpoint = "http://localhost:8080/health"
+		endpoint = "http://api:8080/health"
 	case "gateway":
-		endpoint = "http://localhost:8000/health"
+		endpoint = "http://gateway:8000/health"
 	case "platform-api":
-		endpoint = "http://localhost:8080/health"
+		endpoint = "http://platform-api:8080/health"
 	case "cli":
 		// CLI doesn't have a health endpoint
 		health.Status = "n/a"
@@ -346,10 +353,28 @@ func (c *Collector) checkServiceHealth(service *config.ServiceConfig) *storage.S
 	
 	// Try to check service health (with timeout)
 	start := time.Now()
-	// Note: In a real implementation, we'd make HTTP requests here
-	// For now, we'll simulate based on service availability
+	
+	// Make actual HTTP request to check health
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
+	
+	resp, err := client.Get(endpoint)
 	health.ResponseTime = time.Since(start).Milliseconds()
-	health.Status = "unknown" // Would be determined by actual health check
+	
+	if err != nil {
+		health.Status = "unhealthy"
+		health.Error = err.Error()
+		return health
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode == 200 {
+		health.Status = "healthy"
+	} else {
+		health.Status = "unhealthy"
+		health.Error = fmt.Sprintf("HTTP %d", resp.StatusCode)
+	}
 	
 	return health
 }
@@ -485,4 +510,86 @@ func (c *Collector) scanForTestFiles(basePath string) []string {
 	testFiles = knownTestFiles
 	
 	return testFiles
+}
+
+// generateCoverage runs tests and generates coverage data for a service
+func (c *Collector) generateCoverage(service *config.ServiceConfig) (*storage.CoverageData, error) {
+	// Try to run tests and generate coverage
+	if err := c.runTestsWithCoverage(service); err != nil {
+		return nil, fmt.Errorf("failed to run tests: %w", err)
+	}
+	
+	// Parse the generated coverage
+	return c.parseCoverage(service)
+}
+
+// runTestsWithCoverage runs tests for a service and generates coverage data
+func (c *Collector) runTestsWithCoverage(service *config.ServiceConfig) error {
+	// Check if the service directory exists
+	if _, err := os.Stat(service.Path); os.IsNotExist(err) {
+		return fmt.Errorf("service path does not exist: %s", service.Path)
+	}
+	
+	// For Go services, run go test with coverage
+	if c.isGoService(service) {
+		return c.runGoTestCoverage(service)
+	}
+	
+	// For other services, just create a placeholder
+	return c.createPlaceholderCoverage(service)
+}
+
+// isGoService checks if a service is a Go service
+func (c *Collector) isGoService(service *config.ServiceConfig) bool {
+	// Check for go.mod file
+	goModPath := filepath.Join(service.Path, "go.mod")
+	_, err := os.Stat(goModPath)
+	return err == nil
+}
+
+// runGoTestCoverage runs go test with coverage for a Go service
+func (c *Collector) runGoTestCoverage(service *config.ServiceConfig) error {
+	
+	coverageFile := filepath.Join(service.CoverageDir, "coverage.out")
+	
+	// Create coverage directory if it doesn't exist
+	if err := os.MkdirAll(service.CoverageDir, 0755); err != nil {
+		return fmt.Errorf("failed to create coverage directory: %w", err)
+	}
+	
+	// Run go test with coverage
+	cmd := exec.Command("go", "test", "-coverprofile="+coverageFile, "./...")
+	cmd.Dir = service.Path
+	
+	// Capture output
+	output, err := cmd.CombinedOutput()
+	
+	// Log the test output
+	log.Printf("📋 Test output for %s:\n%s", service.Name, string(output))
+	
+	if err != nil {
+		// Even if tests fail, we might still have coverage data
+		log.Printf("⚠️  Tests failed for %s but continuing: %v", service.Name, err)
+	}
+	
+	// Check if coverage file was created
+	if _, err := os.Stat(coverageFile); os.IsNotExist(err) {
+		return fmt.Errorf("coverage file was not generated")
+	}
+	
+	return nil
+}
+
+// createPlaceholderCoverage creates placeholder coverage data for non-Go services
+func (c *Collector) createPlaceholderCoverage(service *config.ServiceConfig) error {
+	coverageFile := filepath.Join(service.CoverageDir, "coverage.out")
+	
+	// Create coverage directory if it doesn't exist
+	if err := os.MkdirAll(service.CoverageDir, 0755); err != nil {
+		return fmt.Errorf("failed to create coverage directory: %w", err)
+	}
+	
+	// Create a minimal coverage file
+	content := "mode: atomic\n"
+	return os.WriteFile(coverageFile, []byte(content), 0644)
 }

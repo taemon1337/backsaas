@@ -9,13 +9,17 @@ export interface AdminUser {
 }
 
 export interface AuthToken {
-  user: AdminUser
+  user_id: string
+  email: string
+  name: string
+  role: 'super_admin' | 'platform_admin' | 'support_admin' | 'billing_admin'
   exp: number
   iat: number
+  sub: string
+  iss: string
 }
 
 const TOKEN_COOKIE_NAME = 'admin_token'
-const JWT_SECRET = process.env.JWT_SECRET || 'your-jwt-secret-key'
 
 export class AuthService {
   static setToken(token: string) {
@@ -36,7 +40,10 @@ export class AuthService {
 
   static decodeToken(token: string): AuthToken | null {
     try {
-      return jwt.verify(token, JWT_SECRET) as AuthToken
+      // In the browser, we just decode without verification
+      // Token verification should happen on the server side
+      const decoded = jwt.decode(token)
+      return decoded as AuthToken
     } catch (error) {
       console.error('Token decode error:', error)
       return null
@@ -56,7 +63,13 @@ export class AuthService {
       return null
     }
 
-    return decoded.user
+    const user: AdminUser = {
+      id: decoded.user_id,
+      email: decoded.email,
+      name: decoded.name,
+      role: decoded.role
+    }
+    return user
   }
 
   static isAuthenticated(): boolean {
@@ -80,25 +93,21 @@ export class AuthService {
 
   static async login(email: string, password: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch('/api/platform/admin/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ email, password }),
-      })
-
-      const data = await response.json()
-
-      if (response.ok && data.token) {
+      const { apiClient } = await import('./api-client')
+      const data = await apiClient.login(email, password)
+      
+      if (data.token) {
         this.setToken(data.token)
         return { success: true }
       } else {
-        return { success: false, error: data.error || 'Login failed' }
+        return { success: false, error: 'Login failed' }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Login error:', error)
-      return { success: false, error: 'Network error' }
+      return { 
+        success: false, 
+        error: error.message || 'Network error' 
+      }
     }
   }
 
@@ -113,17 +122,10 @@ export class AuthService {
       const currentToken = this.getToken()
       if (!currentToken) return false
 
-      const response = await fetch('/api/platform/admin/refresh', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${currentToken}`,
-          'Content-Type': 'application/json',
-        },
-      })
+      const { apiClient } = await import('./api-client')
+      const data = await apiClient.refreshToken()
 
-      const data = await response.json()
-
-      if (response.ok && data.token) {
+      if (data.token) {
         this.setToken(data.token)
         return true
       } else {

@@ -99,6 +99,52 @@ func (p *ProxyMiddleware) selectBackendURL(route *RouteConfig) string {
 
 // modifyRequest modifies the outgoing request
 func (p *ProxyMiddleware) modifyRequest(req *http.Request, route *RouteConfig, c *gin.Context) {
+	// Transform the request path by stripping the route prefix
+	// Only do this for routes that explicitly need path transformation
+	originalPath := req.URL.Path
+	transformedPath := originalPath
+	
+	// Check if this route needs path prefix stripping based on configuration
+	shouldStripPrefix := false
+	
+	if route.PathPrefix != "" && strings.HasPrefix(originalPath, route.PathPrefix) {
+		// Check if the route configuration specifies to strip the prefix
+		if route.Transform != nil && route.Transform.StripPrefix {
+			shouldStripPrefix = true
+		}
+	}
+	
+	if shouldStripPrefix {
+		// Strip the path prefix
+		transformedPath = strings.TrimPrefix(originalPath, route.PathPrefix)
+		
+		// Ensure the path starts with /
+		if transformedPath == "" {
+			transformedPath = "/"
+		} else if !strings.HasPrefix(transformedPath, "/") {
+			transformedPath = "/" + transformedPath
+		}
+		
+		// Update the request URL path
+		req.URL.Path = transformedPath
+		
+		// Store the transformed path for logging
+		c.Set("transformed_path", transformedPath)
+	}
+	
+	// Apply header transformations from route configuration
+	if route.Transform != nil {
+		// Remove headers first
+		for _, headerName := range route.Transform.RemoveHeaders {
+			req.Header.Del(headerName)
+		}
+		
+		// Add headers
+		for headerName, headerValue := range route.Transform.AddHeaders {
+			req.Header.Set(headerName, headerValue)
+		}
+	}
+	
 	// Add standard headers
 	req.Header.Set("X-Forwarded-For", c.ClientIP())
 	req.Header.Set("X-Forwarded-Proto", p.getScheme(c))

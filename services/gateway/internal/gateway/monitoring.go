@@ -100,8 +100,22 @@ func (m *MonitoringMiddleware) RequestLogger() gin.HandlerFunc {
 		
 		// Get route info if available
 		routeDescription := ""
+		upstreamURL := ""
 		if route, exists := c.Get("route"); exists {
-			routeDescription = route.(*RouteConfig).Description
+			routeConfig := route.(*RouteConfig)
+			routeDescription = routeConfig.Description
+			
+			// Build upstream URL for logging
+			if routeConfig.Backend.URL != "" {
+				upstreamURL = routeConfig.Backend.URL
+				// Add the transformed path if available
+				if transformedPath, pathExists := c.Get("transformed_path"); pathExists {
+					upstreamURL = upstreamURL + transformedPath.(string)
+				} else {
+					// Fallback: show what path would be forwarded
+					upstreamURL = upstreamURL + path
+				}
+			}
 		}
 		
 		// Build log entry
@@ -117,6 +131,7 @@ func (m *MonitoringMiddleware) RequestLogger() gin.HandlerFunc {
 			"user_id":      userID,
 			"tenant_id":    tenantID,
 			"route":        routeDescription,
+			"upstream_url": upstreamURL,
 			"request_id":   c.GetHeader("X-Request-ID"),
 		}
 		
