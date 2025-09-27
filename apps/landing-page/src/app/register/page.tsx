@@ -81,6 +81,9 @@ export default function RegisterPage() {
       })
 
       if (response.ok) {
+        const data = await response.json()
+        // Store JWT token for authentication
+        localStorage.setItem('auth_token', data.token)
         window.location.href = '/create-tenant'
       } else {
         const error = await response.json()

@@ -200,6 +200,45 @@ func (a *AuthService) validateToken(tokenString string) (*AdminClaims, error) {
 	return nil, fmt.Errorf("invalid token")
 }
 
+// AuthMiddleware provides JWT authentication middleware for admin routes
+func (a *AuthService) AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		// Get token from Authorization header
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Authorization header required"})
+			c.Abort()
+			return
+		}
+
+		// Extract token from "Bearer <token>" format
+		tokenString := ""
+		if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+			tokenString = authHeader[7:]
+		} else {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid authorization header format"})
+			c.Abort()
+			return
+		}
+
+		// Validate token
+		claims, err := a.validateToken(tokenString)
+		if err != nil {
+			c.JSON(http.StatusUnauthorized, ErrorResponse{Error: "Invalid or expired token"})
+			c.Abort()
+			return
+		}
+
+		// Set user context
+		c.Set("admin_user_id", claims.UserID)
+		c.Set("admin_email", claims.Email)
+		c.Set("admin_role", claims.Role)
+		c.Set("admin_name", claims.Name)
+
+		c.Next()
+	}
+}
+
 // generateID generates a random ID
 func generateID() string {
 	bytes := make([]byte, 16)

@@ -15,6 +15,7 @@ interface TenantContextValue {
   setUser: (user: TenantUser) => void
   setSession: (session: AuthSession) => void
   logout: () => void
+  retry: () => void
   
   // Utilities
   hasPermission: (permission: string) => boolean
@@ -50,6 +51,7 @@ export function TenantProvider({
   const [session, setSession] = useState<AuthSession | null>(initialSession || null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
 
   // Initialize tenant context from URL or session
   useEffect(() => {
@@ -83,6 +85,8 @@ export function TenantProvider({
 
         // Try to restore session from localStorage
         const savedSession = localStorage.getItem('tenant-session')
+        const authToken = localStorage.getItem('auth_token')
+        
         if (savedSession) {
           try {
             const parsedSession: AuthSession = JSON.parse(savedSession)
@@ -105,6 +109,58 @@ export function TenantProvider({
             console.error('Failed to parse saved session:', error)
             localStorage.removeItem('tenant-session')
           }
+        } else if (authToken) {
+          // If we have an auth token from the platform login, create a basic session
+          // This allows users who logged in through the landing page to access the tenant UI
+          try {
+            // Decode JWT to get user info (basic decoding, not verification)
+            const tokenParts = authToken.split('.')
+            if (tokenParts.length === 3) {
+              const payload = JSON.parse(atob(tokenParts[1]))
+              
+              // Create a basic user session
+              const basicUser: TenantUser = {
+                id: payload.sub || 'unknown',
+                email: payload.email || 'unknown@example.com',
+                name: `${payload.firstName || 'User'} ${payload.lastName || ''}`.trim(),
+                roles: ['user'],
+                permissions: ['read'],
+                tenantId: payload.tenant_id || tenant?.id || 'default',
+                entityAccess: {},
+                isActive: true,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+              }
+              
+              // Create a basic session (expires in 24 hours)
+              const basicSession: AuthSession = {
+                user: basicUser,
+                tenant: tenant || {
+                  id: 'default',
+                  name: 'Default Tenant',
+                  slug: 'default',
+                  domain: 'localhost',
+                  branding: {
+                    primaryColor: '#3B82F6',
+                    secondaryColor: '#1E40AF',
+                    logo: '',
+                    favicon: ''
+                  },
+                  settings: {},
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
+                },
+                token: authToken,
+                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+              }
+              
+              setSession(basicSession)
+              setUser(basicUser)
+            }
+          } catch (error) {
+            console.error('Failed to decode auth token:', error)
+            localStorage.removeItem('auth_token')
+          }
         }
       } catch (error) {
         console.error('Failed to initialize tenant context:', error)
@@ -115,7 +171,7 @@ export function TenantProvider({
     }
 
     initializeTenant()
-  }, [])
+  }, [retryCount])
 
   // Save session to localStorage when it changes
   useEffect(() => {
@@ -130,9 +186,16 @@ export function TenantProvider({
     setSession(null)
     setUser(null)
     localStorage.removeItem('tenant-session')
+    localStorage.removeItem('auth_token')
     
     // Redirect to login page
-    window.location.href = '/auth/login'
+    window.location.href = '/login'
+  }
+
+  const retry = () => {
+    setRetryCount(prev => prev + 1)
+    setError(null)
+    setIsLoading(true)
   }
 
   const hasPermission = (permission: string): boolean => {
@@ -178,11 +241,11 @@ export function TenantProvider({
     setUser,
     setSession,
     logout,
+    retry,
     hasPermission,
     hasRole,
     canAccessEntity,
   }
-
   return (
     <TenantContext.Provider value={value}>
       {children}

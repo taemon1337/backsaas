@@ -31,6 +31,9 @@ export default function LandingPage() {
               <a href="#docs" className="text-gray-600 hover:text-gray-900">Docs</a>
             </nav>
             <div className="flex items-center space-x-4">
+              <Button variant="outline" onClick={() => window.location.href = '/login'}>
+                Sign In
+              </Button>
               <Button variant="outline" onClick={() => window.location.href = '/admin'}>
                 Admin Console
               </Button>

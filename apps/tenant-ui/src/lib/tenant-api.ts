@@ -61,7 +61,7 @@ class TenantApiClient {
         if (error.response?.status === 401) {
           // Clear session and redirect to login
           localStorage.removeItem('tenant-session')
-          window.location.href = '/auth/login'
+          window.location.href = '/login'
         }
         
         return Promise.reject(apiError)
@@ -128,9 +128,9 @@ class TenantApiClient {
     token: string
     expiresAt: string
   }> {
-    return this.makeRequest('/api/auth/login', {
+    return this.makeRequest('/api/platform/auth/login', {
       method: 'POST',
-      data: { email, password, tenantSlug },
+      data: { email, password },
     })
   }
 

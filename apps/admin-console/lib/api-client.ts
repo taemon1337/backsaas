@@ -226,6 +226,22 @@ class ApiClient {
     })
   }
 
+  // ============================================================================
+  // SYSTEM TESTING API
+  // ============================================================================
+
+  async getSystemTests(runTests: boolean = false): Promise<any> {
+    const url = runTests ? '/api/platform/health/tests?run=true' : '/api/platform/health/tests'
+    return this.makeRequest(url, {
+      requireAuth: true, // Requires admin authentication
+      timeout: runTests ? 60000 : 10000, // Longer timeout for running tests
+    })
+  }
+
+  async runSystemTests(): Promise<any> {
+    return this.getSystemTests(true)
+  }
+
   async getSystemHealth(): Promise<any> {
     try {
       const [summary, services, status] = await Promise.all([

@@ -96,7 +96,12 @@ export default function CreateTenantPage() {
     if (!formData.tenantSlug) return
 
     try {
-      const response = await fetch(`/api/platform/tenants/check-slug?slug=${formData.tenantSlug}`)
+      const token = localStorage.getItem('auth_token')
+      const response = await fetch(`/api/platform/tenants/check-slug?slug=${formData.tenantSlug}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
       const data = await response.json()
       setSlugAvailable(data.available)
     } catch (error) {
@@ -135,10 +140,12 @@ export default function CreateTenantPage() {
     setIsLoading(true)
     
     try {
+      const token = localStorage.getItem('auth_token')
       const response = await fetch('/api/platform/tenants', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
         },
         body: JSON.stringify({
           name: formData.companyName,

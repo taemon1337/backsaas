@@ -317,15 +317,30 @@ func (s *UserAuthService) getUserTenants(userID string) []Tenant {
 	if tenantIDs == nil {
 		return []Tenant{}
 	}
-
-	tenants := make([]Tenant, 0, len(tenantIDs))
+	
+	var tenants []Tenant
 	for _, tenantID := range tenantIDs {
 		if tenant, exists := s.tenants[tenantID]; exists {
 			tenants = append(tenants, *tenant)
 		}
 	}
-
+	
 	return tenants
+}
+
+// GetUserTenants handles GET /api/platform/users/me/tenants
+func (s *UserAuthService) GetUserTenants(c *gin.Context) {
+	// Get user from JWT token (set by AuthMiddleware)
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found in context"})
+		return
+	}
+	
+	userObj := user.(*User)
+	tenants := s.getUserTenants(userObj.ID)
+	
+	c.JSON(http.StatusOK, tenants)
 }
 
 // AuthMiddleware validates JWT tokens for user endpoints

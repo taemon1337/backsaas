@@ -183,6 +183,20 @@ func (e *Engine) setupUserAuthRoutes() {
 	
 	// GET /api/platform/tenants/check-slug - Check slug availability
 	e.router.GET("/api/platform/tenants/check-slug", e.userAuthService.CheckSlugAvailability)
+	
+	// User management routes (authentication required)
+	userGroup := e.router.Group("/api/platform/users")
+	userGroup.Use(e.userAuthService.AuthMiddleware())
+	
+	// GET /api/platform/users/me/tenants - Get current user's tenants
+	userGroup.GET("/me/tenants", e.userAuthService.GetUserTenants)
+	
+	// Health and testing routes (admin authentication required)
+	healthGroup := e.router.Group("/api/platform/health")
+	healthGroup.Use(e.authService.AuthMiddleware())
+	
+	// GET /api/platform/health/tests - Get system test results
+	healthGroup.GET("/tests", e.GetSystemHealthTests)
 }
 
 // tenantMiddleware adds tenant context to requests

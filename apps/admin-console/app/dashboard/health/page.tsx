@@ -89,8 +89,19 @@ export default function SystemHealthPage() {
     refetchInterval: 30000,
   })
 
+  const { 
+    data: systemTests, 
+    isLoading: testsLoading, 
+    error: testsError, 
+    refetch: refetchTests 
+  } = useQuery({
+    queryKey: ['system-tests'],
+    queryFn: () => apiClient.getSystemTests(),
+    refetchInterval: 60000, // Refresh every minute
+  })
+
   // Combine loading states
-  const loading = summaryLoading || servicesLoading || statusLoading
+  const loading = summaryLoading || servicesLoading || statusLoading || testsLoading
   const refreshing = triggering
 
   // Convert services data to array format for display
@@ -104,7 +115,30 @@ export default function SystemHealthPage() {
   })) : []
 
   const fetchHealthData = async () => {
-    await Promise.all([refetchSummary(), refetchServices(), refetchStatus()])
+    await Promise.all([refetchSummary(), refetchServices(), refetchStatus(), refetchTests()])
+  }
+
+  const runSystemTests = async () => {
+    setTriggering(true)
+    try {
+      const result = await apiClient.runSystemTests()
+      
+      toast({
+        title: "Tests Completed",
+        description: `System tests completed with ${result.summary?.success_rate?.toFixed(1)}% success rate`,
+      })
+      
+      // Refresh test data
+      setTimeout(refetchTests, 2000)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to run system tests",
+        variant: "destructive",
+      })
+    } finally {
+      setTriggering(false)
+    }
   }
 
   const triggerCollection = async () => {
@@ -202,7 +236,17 @@ export default function SystemHealthPage() {
             Refresh
           </Button>
           <Button 
+            onClick={runSystemTests}
+            disabled={refreshing}
+            variant="outline"
+            size="sm"
+          >
+            <CheckCircle className="h-4 w-4 mr-2" />
+            Run Tests
+          </Button>
+          <Button 
             onClick={triggerCollection}
+            disabled={refreshing}
             size="sm"
           >
             <Activity className="h-4 w-4 mr-2" />
@@ -363,6 +407,97 @@ export default function SystemHealthPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* System Tests */}
+      {systemTests && (
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader>
+            <CardTitle className="text-white flex items-center space-x-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              <span>System Tests</span>
+            </CardTitle>
+            <CardDescription className="text-slate-400">
+              Automated test results for user flows, error handling, and system validation
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* Test Summary */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="text-2xl font-bold text-white">{systemTests.summary?.total_tests || 0}</div>
+                <div className="text-sm text-slate-400">Total Tests</div>
+              </div>
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="text-2xl font-bold text-green-400">{systemTests.summary?.passed_tests || 0}</div>
+                <div className="text-sm text-slate-400">Passed</div>
+              </div>
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="text-2xl font-bold text-red-400">{systemTests.summary?.failed_tests || 0}</div>
+                <div className="text-sm text-slate-400">Failed</div>
+              </div>
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className={`text-2xl font-bold ${systemTests.summary?.success_rate >= 90 ? 'text-green-400' : systemTests.summary?.success_rate >= 70 ? 'text-yellow-400' : 'text-red-400'}`}>
+                  {systemTests.summary?.success_rate?.toFixed(1) || 0}%
+                </div>
+                <div className="text-sm text-slate-400">Success Rate</div>
+              </div>
+            </div>
+
+            {/* Test Suites */}
+            <div className="space-y-4">
+              {systemTests.suites?.map((suite: any, index: number) => (
+                <div key={index} className="p-4 bg-slate-700/50 rounded-lg">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center space-x-3">
+                      {suite.status === 'pass' ? (
+                        <CheckCircle className="h-5 w-5 text-green-500" />
+                      ) : suite.status === 'fail' ? (
+                        <XCircle className="h-5 w-5 text-red-500" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-yellow-500" />
+                      )}
+                      <div>
+                        <h3 className="font-medium text-white">{suite.name}</h3>
+                        <p className="text-sm text-slate-400">{suite.description}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <Badge 
+                        variant={suite.status === 'pass' ? 'default' : suite.status === 'fail' ? 'destructive' : 'secondary'}
+                        className="mb-1"
+                      >
+                        {suite.status.toUpperCase()}
+                      </Badge>
+                      <div className="text-xs text-slate-400">
+                        {suite.duration}ms
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-4 text-sm">
+                    <span className="text-green-400">✅ {suite.passed_tests} passed</span>
+                    {suite.failed_tests > 0 && (
+                      <span className="text-red-400">❌ {suite.failed_tests} failed</span>
+                    )}
+                    {suite.warning_tests > 0 && (
+                      <span className="text-yellow-400">⚠️ {suite.warning_tests} warnings</span>
+                    )}
+                    <span className="text-slate-400 ml-auto">
+                      Last run: {new Date(suite.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              )) || (
+                <div className="text-center py-8">
+                  <CheckCircle className="h-12 w-12 text-slate-500 mx-auto mb-4" />
+                  <p className="text-slate-400">No test results available</p>
+                  <p className="text-sm text-slate-500">Click "Run Tests" to execute system tests</p>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
