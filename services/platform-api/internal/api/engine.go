@@ -10,17 +10,19 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq" // PostgreSQL driver
 	"github.com/backsaas/platform/services/platform-api/internal/admin"
+	"github.com/backsaas/platform/services/platform-api/internal/auth"
 	"github.com/backsaas/platform/services/platform-api/internal/schema"
 )
 
 // Engine represents the generic schema-driven API engine
 type Engine struct {
-	schema      *schema.Schema
-	db          *sql.DB
-	dbOps       *DatabaseOperations
-	tenantID    string
-	router      *gin.Engine
-	authService *admin.AuthService
+	schema          *schema.Schema
+	db              *sql.DB
+	dbOps           *DatabaseOperations
+	tenantID        string
+	router          *gin.Engine
+	authService     *admin.AuthService
+	userAuthService *auth.UserAuthService
 }
 
 // Config holds configuration for the API engine
@@ -72,13 +74,17 @@ func NewEngine(config *Config) (*Engine, error) {
 	// Create admin auth service
 	authService := admin.NewAuthService()
 	
+	// Create user auth service
+	userAuthService := auth.NewUserAuthService()
+	
 	// Create engine
 	engine := &Engine{
-		schema:      schemaObj,
-		db:          db,
-		dbOps:       dbOps,
-		tenantID:    config.TenantID,
-		authService: authService,
+		schema:          schemaObj,
+		db:              db,
+		dbOps:           dbOps,
+		tenantID:        config.TenantID,
+		authService:     authService,
+		userAuthService: userAuthService,
 	}
 	
 	// Ensure database tables exist for all entities
@@ -120,6 +126,9 @@ func (e *Engine) setupRouter() error {
 	// Setup admin authentication routes
 	e.setupAdminRoutes()
 	
+	// Setup user authentication routes
+	e.setupUserAuthRoutes()
+	
 	return nil
 }
 
@@ -152,6 +161,28 @@ func (e *Engine) setupAdminRoutes() {
 	
 	// POST /api/platform/admin/refresh - Token refresh
 	adminGroup.POST("/refresh", e.authService.RefreshToken)
+}
+
+// setupUserAuthRoutes creates user authentication and tenant management routes
+func (e *Engine) setupUserAuthRoutes() {
+	// Public auth routes (no authentication required)
+	authGroup := e.router.Group("/api/platform/auth")
+	
+	// POST /api/platform/auth/register - User registration
+	authGroup.POST("/register", e.userAuthService.Register)
+	
+	// POST /api/platform/auth/login - User login
+	authGroup.POST("/login", e.userAuthService.Login)
+	
+	// Tenant management routes (authentication required)
+	tenantGroup := e.router.Group("/api/platform/tenants")
+	tenantGroup.Use(e.userAuthService.AuthMiddleware())
+	
+	// POST /api/platform/tenants - Create tenant
+	tenantGroup.POST("", e.userAuthService.CreateTenant)
+	
+	// GET /api/platform/tenants/check-slug - Check slug availability
+	e.router.GET("/api/platform/tenants/check-slug", e.userAuthService.CheckSlugAvailability)
 }
 
 // tenantMiddleware adds tenant context to requests

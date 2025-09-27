@@ -34,7 +34,7 @@ export default function LandingPage() {
               <Button variant="outline" onClick={() => window.location.href = '/admin'}>
                 Admin Console
               </Button>
-              <Button onClick={() => window.location.href = '/ui'}>
+              <Button onClick={() => window.location.href = '/register'}>
                 Get Started
               </Button>
             </div>
@@ -55,8 +55,8 @@ export default function LandingPage() {
             and analytics.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" className="text-lg px-8 py-4" onClick={() => window.location.href = '/ui'}>
-              Create Your Tenant
+            <Button size="lg" className="text-lg px-8 py-4" onClick={() => window.location.href = '/register'}>
+              Create Your Account
               <ArrowRight className="ml-2 h-5 w-5" />
             </Button>
             <Button variant="outline" size="lg" className="text-lg px-8 py-4">
@@ -173,9 +173,9 @@ export default function LandingPage() {
               size="lg" 
               variant="secondary" 
               className="text-lg px-8 py-4"
-              onClick={() => window.location.href = '/ui'}
+              onClick={() => window.location.href = '/register'}
             >
-              Create Tenant
+              Get Started
             </Button>
             <Button 
               size="lg" 
