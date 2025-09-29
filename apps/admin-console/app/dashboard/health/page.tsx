@@ -16,7 +16,13 @@ import {
   XCircle, 
   Clock,
   TrendingUp,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  TestTube,
+  FileText,
+  Target,
+  Zap
 } from 'lucide-react'
 import { useToast } from '@/components/ui/use-toast'
 
@@ -47,13 +53,13 @@ interface ServiceStatus {
 
 interface SystemStatus {
   timestamp: string
-  services: Record<string, ServiceStatus>
   uptime: string
 }
 
 export default function SystemHealthPage() {
   const { toast } = useToast()
-  const [triggering, setTriggering] = useState(false)
+  const [isCollecting, setIsCollecting] = useState(false)
+  const [showTestDetails, setShowTestDetails] = useState(false)
   
   // Use React Query for data fetching
   const { 
@@ -102,7 +108,7 @@ export default function SystemHealthPage() {
 
   // Combine loading states
   const loading = summaryLoading || servicesLoading || statusLoading || testsLoading
-  const refreshing = triggering
+  const refreshing = isCollecting
 
   // Convert services data to array format for display
   const services = summary?.services ? Object.entries(summary.services).map(([name, coverage]) => ({
@@ -119,7 +125,7 @@ export default function SystemHealthPage() {
   }
 
   const runSystemTests = async () => {
-    setTriggering(true)
+    setIsCollecting(true)
     try {
       const result = await apiClient.runSystemTests()
       
@@ -137,12 +143,12 @@ export default function SystemHealthPage() {
         variant: "destructive",
       })
     } finally {
-      setTriggering(false)
+      setIsCollecting(false)
     }
   }
 
   const triggerCollection = async () => {
-    setTriggering(true)
+    setIsCollecting(true)
     try {
       const result = await apiClient.triggerCoverageCollection()
       
@@ -160,7 +166,7 @@ export default function SystemHealthPage() {
         variant: "destructive",
       })
     } finally {
-      setTriggering(false)
+      setIsCollecting(false)
     }
   }
 
@@ -498,6 +504,239 @@ export default function SystemHealthPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Detailed Test Results Table */}
+      <Card className="bg-slate-800 border-slate-700">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <TestTube className="h-5 w-5 text-blue-500" />
+              <CardTitle className="text-white">Detailed Test Results</CardTitle>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowTestDetails(!showTestDetails)}
+              className="text-slate-400 hover:text-white"
+            >
+              {showTestDetails ? (
+                <>
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Hide Details
+                </>
+              ) : (
+                <>
+                  <ChevronRight className="h-4 w-4 mr-2" />
+                  Show Details
+                </>
+              )}
+            </Button>
+          </div>
+          <CardDescription className="text-slate-400">
+            Comprehensive test coverage and results for all platform services
+          </CardDescription>
+        </CardHeader>
+        
+        {showTestDetails && (
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700">
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Service</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Health</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Coverage</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Unit Tests</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Integration</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">E2E Tests</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Components</th>
+                    <th className="text-left py-3 px-4 text-slate-300 font-medium">Last Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {servicesData && Object.entries(servicesData).map(([serviceName, serviceData]: [string, any]) => (
+                    <tr key={serviceName} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          <Server className="h-4 w-4 text-blue-500" />
+                          <span className="font-medium text-white capitalize">{serviceName}</span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          {serviceData.service_health?.status === 'healthy' ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : serviceData.service_health?.status === 'unhealthy' ? (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          ) : (
+                            <Clock className="h-4 w-4 text-yellow-500" />
+                          )}
+                          <span className={`text-sm ${
+                            serviceData.service_health?.status === 'healthy' ? 'text-green-400' :
+                            serviceData.service_health?.status === 'unhealthy' ? 'text-red-400' :
+                            'text-yellow-400'
+                          }`}>
+                            {serviceData.service_health?.status || 'unknown'}
+                          </span>
+                          {serviceData.service_health?.response_time_ms && (
+                            <span className="text-xs text-slate-500">
+                              ({serviceData.service_health.response_time_ms}ms)
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-16 bg-slate-700 rounded-full h-2">
+                            <div 
+                              className={`h-2 rounded-full ${
+                                serviceData.overall >= 80 ? 'bg-green-500' :
+                                serviceData.overall >= 60 ? 'bg-yellow-500' :
+                                'bg-red-500'
+                              }`}
+                              style={{ width: `${Math.min(serviceData.overall || 0, 100)}%` }}
+                            />
+                          </div>
+                          <span className="text-sm text-slate-300 font-mono">
+                            {(serviceData.overall || 0).toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {serviceData.covered_lines || 0}/{serviceData.lines || 0} lines
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          {serviceData.test_status?.unit_tests?.exists ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          <span className="text-sm text-slate-300">
+                            {serviceData.test_status?.unit_tests?.count || 0} tests
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Status: {serviceData.test_status?.unit_tests?.status || 'unknown'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          {serviceData.test_status?.integration_tests?.exists ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          <span className="text-sm text-slate-300">
+                            {serviceData.test_status?.integration_tests?.count || 0} tests
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Status: {serviceData.test_status?.integration_tests?.status || 'none'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          {serviceData.test_status?.e2e_tests?.exists ? (
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          ) : (
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          )}
+                          <span className="text-sm text-slate-300">
+                            {serviceData.test_status?.e2e_tests?.count || 0} tests
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          Status: {serviceData.test_status?.e2e_tests?.status || 'none'}
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="flex items-center space-x-2">
+                          <Target className="h-4 w-4 text-purple-500" />
+                          <span className="text-sm text-slate-300">
+                            {serviceData.test_status?.tested_components || 0}/
+                            {serviceData.test_status?.total_components || 0}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {(serviceData.test_status?.test_coverage_percent || 0).toFixed(1)}% covered
+                        </div>
+                      </td>
+                      <td className="py-4 px-4">
+                        <div className="text-sm text-slate-300">
+                          {serviceData.timestamp ? new Date(serviceData.timestamp).toLocaleString() : 'Never'}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {serviceData.timestamp ? 
+                            `${Math.round((Date.now() - new Date(serviceData.timestamp).getTime()) / 60000)}m ago` : 
+                            'No data'
+                          }
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Test Summary Cards */}
+            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <FileText className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm font-medium text-slate-300">Total Tests</span>
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {servicesData ? Object.values(servicesData).reduce((sum: number, service: any) => 
+                    sum + (service.test_status?.unit_tests?.count || 0) + 
+                          (service.test_status?.integration_tests?.count || 0) + 
+                          (service.test_status?.e2e_tests?.count || 0), 0
+                  ) : 0}
+                </div>
+              </div>
+              
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Zap className="h-4 w-4 text-green-500" />
+                  <span className="text-sm font-medium text-slate-300">Avg Coverage</span>
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {servicesData ? (
+                    Object.values(servicesData).reduce((sum: number, service: any) => sum + (service.overall || 0), 0) / 
+                    Object.keys(servicesData).length
+                  ).toFixed(1) : 0}%
+                </div>
+              </div>
+              
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <CheckCircle className="h-4 w-4 text-green-500" />
+                  <span className="text-sm font-medium text-slate-300">Services Healthy</span>
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {servicesData ? Object.values(servicesData).filter((service: any) => 
+                    service.service_health?.status === 'healthy'
+                  ).length : 0}/{servicesData ? Object.keys(servicesData).length : 0}
+                </div>
+              </div>
+              
+              <div className="p-4 bg-slate-700/50 rounded-lg">
+                <div className="flex items-center space-x-2 mb-2">
+                  <Target className="h-4 w-4 text-purple-500" />
+                  <span className="text-sm font-medium text-slate-300">Components Tested</span>
+                </div>
+                <div className="text-2xl font-bold text-white">
+                  {servicesData ? Object.values(servicesData).reduce((sum: number, service: any) => 
+                    sum + (service.test_status?.tested_components || 0), 0
+                  ) : 0}/{servicesData ? Object.values(servicesData).reduce((sum: number, service: any) => 
+                    sum + (service.test_status?.total_components || 0), 0
+                  ) : 0}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        )}
+      </Card>
     </div>
   )
 }

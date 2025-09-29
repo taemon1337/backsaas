@@ -4,7 +4,10 @@ import { AuthService } from './auth'
 const API_CONFIG = {
   baseURL: '', // Use relative URLs to go through gateway
   timeout: 30000,
-  retries: 3,
+  retries: 5, // Increased for rate limiting
+  baseDelay: 1000, // Base delay in ms
+  maxDelay: 30000, // Max delay in ms
+  jitterFactor: 0.1, // Add randomness to prevent thundering herd
 }
 
 // API Response Types
@@ -114,12 +117,22 @@ class ApiClient {
         // Handle response
         if (!response.ok) {
           const errorData = await this.parseErrorResponse(response)
-          throw new ApiError(
+          const apiError = new ApiError(
             errorData.message || `HTTP ${response.status}`,
             response.status,
             errorData.code,
             errorData
           )
+          
+          // For rate limiting, add retry-after info if available
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('retry-after')
+            if (retryAfter) {
+              apiError.details = { ...apiError.details, retryAfter: parseInt(retryAfter) }
+            }
+          }
+          
+          throw apiError
         }
 
         // Parse successful response
@@ -132,9 +145,13 @@ class ApiClient {
       } catch (error) {
         lastError = error as Error
         
-        // Don't retry on auth errors or client errors (4xx)
-        if (error instanceof ApiError && error.status && error.status < 500) {
-          throw error
+        // Don't retry on auth errors or most client errors (4xx)
+        // BUT DO retry on 429 (Too Many Requests) and 408 (Request Timeout)
+        if (error instanceof ApiError && error.status) {
+          const shouldRetry = error.status === 429 || error.status === 408 || error.status >= 500
+          if (!shouldRetry) {
+            throw error
+          }
         }
 
         // Don't retry on last attempt
@@ -142,8 +159,16 @@ class ApiClient {
           break
         }
 
-        // Wait before retry (exponential backoff)
-        await this.delay(Math.pow(2, attempt - 1) * 1000)
+        // Calculate delay with smart backoff
+        let delay = this.calculateBackoffDelay(attempt, error as ApiError)
+        
+        console.log(`API request failed (attempt ${attempt}/${this.maxRetries}), retrying in ${delay}ms...`, {
+          url,
+          status: (error as ApiError).status,
+          message: (error as ApiError).message
+        })
+
+        await this.delay(delay)
       }
     }
 
@@ -171,6 +196,36 @@ class ApiClient {
    */
   private delay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
+  }
+
+  /**
+   * Calculate smart backoff delay for retries
+   */
+  private calculateBackoffDelay(attempt: number, error?: ApiError): number {
+    // If server provides retry-after header (for 429), respect it
+    if (error?.status === 429 && error.details?.retryAfter) {
+      const retryAfterMs = error.details.retryAfter * 1000
+      // Cap at max delay and add some jitter
+      const cappedDelay = Math.min(retryAfterMs, API_CONFIG.maxDelay)
+      return this.addJitter(cappedDelay)
+    }
+
+    // Exponential backoff: baseDelay * (2 ^ (attempt - 1))
+    const exponentialDelay = API_CONFIG.baseDelay * Math.pow(2, attempt - 1)
+    
+    // Cap at maximum delay
+    const cappedDelay = Math.min(exponentialDelay, API_CONFIG.maxDelay)
+    
+    // Add jitter to prevent thundering herd
+    return this.addJitter(cappedDelay)
+  }
+
+  /**
+   * Add jitter to delay to prevent thundering herd
+   */
+  private addJitter(delay: number): number {
+    const jitter = delay * API_CONFIG.jitterFactor * Math.random()
+    return Math.floor(delay + jitter)
   }
 
   // ============================================================================
@@ -301,35 +356,29 @@ class ApiClient {
       requireAuth: false, // Metrics endpoint is public
     })
   }
-
   // ============================================================================
   // TENANT MANAGEMENT API
   // ============================================================================
 
-  async getTenants(params?: {
-    page?: number
-    limit?: number
-    search?: string
-  }): Promise<PaginatedResponse<any>> {
-    const searchParams = new URLSearchParams()
-    if (params?.page) searchParams.set('page', params.page.toString())
-    if (params?.limit) searchParams.set('limit', params.limit.toString())
-    if (params?.search) searchParams.set('search', params.search)
+  async getTenants(params?: { page?: number; limit?: number; search?: string }): Promise<PaginatedResponse<any>> {
+    const queryParams = new URLSearchParams()
+    if (params?.page) queryParams.append('page', params.page.toString())
+    if (params?.limit) queryParams.append('limit', params.limit.toString())
+    if (params?.search) queryParams.append('search', params.search)
     
-    const query = searchParams.toString()
-    const endpoint = `/api/platform/tenants${query ? `?${query}` : ''}`
-    
-    return this.makeRequest(endpoint)
+    const url = `/api/platform/tenants${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+    return this.makeRequest(url, { requireAuth: true })
   }
 
   async getTenant(id: string): Promise<any> {
-    return this.makeRequest(`/api/platform/tenants/${id}`)
+    return this.makeRequest(`/api/platform/tenants/${id}`, { requireAuth: true })
   }
 
   async createTenant(data: any): Promise<any> {
     return this.makeRequest('/api/platform/tenants', {
       method: 'POST',
       body: data,
+      requireAuth: true,
     })
   }
 
@@ -337,12 +386,14 @@ class ApiClient {
     return this.makeRequest(`/api/platform/tenants/${id}`, {
       method: 'PUT',
       body: data,
+      requireAuth: true,
     })
   }
 
-  async deleteTenant(id: string): Promise<void> {
+  async deleteTenant(id: string): Promise<any> {
     return this.makeRequest(`/api/platform/tenants/${id}`, {
       method: 'DELETE',
+      requireAuth: true,
     })
   }
 
@@ -353,11 +404,13 @@ class ApiClient {
   async getSchemas(params?: {
     page?: number
     limit?: number
+    search?: string
     tenantId?: string
   }): Promise<PaginatedResponse<any>> {
     const searchParams = new URLSearchParams()
     if (params?.page) searchParams.set('page', params.page.toString())
     if (params?.limit) searchParams.set('limit', params.limit.toString())
+    if (params?.search) searchParams.set('search', params.search)
     if (params?.tenantId) searchParams.set('tenant_id', params.tenantId)
     
     const query = searchParams.toString()
@@ -389,29 +442,7 @@ class ApiClient {
       method: 'DELETE',
     })
   }
-
-  // ============================================================================
-  // USER MANAGEMENT API
-  // ============================================================================
-
-  async getUsers(params?: {
-    page?: number
-    limit?: number
-    tenantId?: string
-  }): Promise<PaginatedResponse<any>> {
-    const searchParams = new URLSearchParams()
-    if (params?.page) searchParams.set('page', params.page.toString())
-    if (params?.limit) searchParams.set('limit', params.limit.toString())
-    if (params?.tenantId) searchParams.set('tenant_id', params.tenantId)
-    
-    const query = searchParams.toString()
-    const endpoint = `/api/platform/users${query ? `?${query}` : ''}`
-    
-    return this.makeRequest(endpoint)
-  }
-
   async getUser(id: string): Promise<any> {
-    return this.makeRequest(`/api/platform/users/${id}`)
   }
 
   async createUser(data: any): Promise<any> {

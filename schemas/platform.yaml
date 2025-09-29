@@ -8,7 +8,7 @@ entities:
     key: "tenant_id"
     schema:
       type: "object"
-      required: ["tenant_id", "name"]
+      required: ["tenant_id", "name", "slug", "owner_email"]
       properties:
         tenant_id:
           type: "string"
@@ -18,20 +18,60 @@ entities:
           minLength: 1
           maxLength: 255
           description: "Display name for the tenant"
+        slug:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+          pattern: "^[a-z0-9-]+$"
+          description: "URL-friendly identifier for the tenant"
         domain:
           type: "string"
           format: "hostname"
           description: "Custom domain for the tenant"
         plan:
           type: "string"
-          enum: ["free", "pro", "enterprise", "system"]
-          default: "free"
+          enum: ["starter", "pro", "enterprise", "system"]
+          default: "starter"
           description: "Subscription plan"
         status:
           type: "string"
-          enum: ["active", "inactive", "suspended"]
+          enum: ["active", "inactive", "suspended", "trial"]
           default: "active"
           description: "Current status of the tenant"
+        owner_email:
+          type: "string"
+          format: "email"
+          description: "Primary contact email for the tenant owner"
+        owner_name:
+          type: "string"
+          minLength: 1
+          maxLength: 255
+          description: "Full name of the tenant owner"
+        user_count:
+          type: "integer"
+          minimum: 0
+          default: 0
+          description: "Number of users in this tenant"
+        storage_used:
+          type: "string"
+          description: "Amount of storage used (e.g., '1.2 GB')"
+        last_activity:
+          type: "string"
+          format: "date-time"
+          description: "Timestamp of last activity in this tenant"
+        billing_status:
+          type: "string"
+          enum: ["paid", "trial", "overdue", "suspended"]
+          default: "trial"
+          description: "Current billing status"
+        created_at:
+          type: "string"
+          format: "date-time"
+          description: "When the tenant was created"
+        updated_at:
+          type: "string"
+          format: "date-time"
+          description: "When the tenant was last updated"
         settings:
           type: "object"
           description: "Tenant-specific configuration settings"
@@ -77,36 +117,67 @@ entities:
     key: "schema_id"
     schema:
       type: "object"
-      required: ["schema_id", "tenant_id", "name", "schema_definition"]
+      required: ["schema_id", "name", "schema_definition"]
       properties:
         schema_id:
           type: "string"
           description: "Unique identifier for the schema"
-        tenant_id:
-          type: "string"
-          description: "Tenant this schema belongs to"
         name:
           type: "string"
           minLength: 1
           maxLength: 255
           description: "Name of the schema"
+        slug:
+          type: "string"
+          minLength: 1
+          maxLength: 100
+          pattern: "^[a-z0-9-]+$"
+          description: "URL-friendly identifier for the schema"
+        description:
+          type: "string"
+          maxLength: 1000
+          description: "Description of what this schema represents"
+        type:
+          type: "string"
+          enum: ["entity", "collection", "workflow", "event"]
+          default: "entity"
+          description: "Type/category of the schema"
+        status:
+          type: "string"
+          enum: ["draft", "active", "deprecated", "archived"]
+          default: "draft"
+          description: "Current status of the schema"
         version:
+          type: "string"
+          pattern: "^\\d+\\.\\d+\\.\\d+$"
+          default: "1.0.0"
+          description: "Semantic version of the schema"
+        field_count:
           type: "integer"
-          minimum: 1
-          default: 1
-          description: "Version number of the schema"
+          minimum: 0
+          default: 0
+          description: "Number of fields in the schema"
+        usage_count:
+          type: "integer"
+          minimum: 0
+          default: 0
+          description: "Number of times this schema has been used"
         schema_definition:
           type: "object"
           description: "The actual schema definition in JSON format"
-        status:
-          type: "string"
-          enum: ["draft", "deployed", "deprecated"]
-          default: "draft"
-          description: "Current status of the schema"
-        deployed_at:
+        tags:
+          type: "array"
+          items:
+            type: "string"
+          description: "Tags for categorizing and searching schemas"
+        created_at:
           type: "string"
           format: "date-time"
-          description: "When the schema was deployed"
+          description: "When the schema was created"
+        updated_at:
+          type: "string"
+          format: "date-time"
+          description: "When the schema was last updated"
         created_by:
           type: "string"
           description: "User ID who created the schema"

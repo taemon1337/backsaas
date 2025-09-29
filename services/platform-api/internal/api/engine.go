@@ -117,10 +117,11 @@ func (e *Engine) setupRouter() error {
 	// Schema info endpoint
 	e.router.GET("/schema", e.getSchema)
 	
-	// Generate CRUD endpoints for each entity
-	api := e.router.Group("/api")
+	// Generate CRUD endpoints for each entity under /api/platform (admin authentication required)
+	platformAPI := e.router.Group("/api/platform")
+	platformAPI.Use(e.authService.AuthMiddleware())
 	for entityName, entity := range e.schema.Entities {
-		e.setupEntityRoutes(api, entityName, entity)
+		e.setupEntityRoutes(platformAPI, entityName, entity)
 	}
 	
 	// Setup admin authentication routes
@@ -163,7 +164,7 @@ func (e *Engine) setupAdminRoutes() {
 	adminGroup.POST("/refresh", e.authService.RefreshToken)
 }
 
-// setupUserAuthRoutes creates user authentication and tenant management routes
+// setupUserAuthRoutes creates user authentication routes
 func (e *Engine) setupUserAuthRoutes() {
 	// Public auth routes (no authentication required)
 	authGroup := e.router.Group("/api/platform/auth")
@@ -174,14 +175,7 @@ func (e *Engine) setupUserAuthRoutes() {
 	// POST /api/platform/auth/login - User login
 	authGroup.POST("/login", e.userAuthService.Login)
 	
-	// Tenant management routes (authentication required)
-	tenantGroup := e.router.Group("/api/platform/tenants")
-	tenantGroup.Use(e.userAuthService.AuthMiddleware())
-	
-	// POST /api/platform/tenants - Create tenant
-	tenantGroup.POST("", e.userAuthService.CreateTenant)
-	
-	// GET /api/platform/tenants/check-slug - Check slug availability
+	// GET /api/platform/tenants/check-slug - Check slug availability (public)
 	e.router.GET("/api/platform/tenants/check-slug", e.userAuthService.CheckSlugAvailability)
 	
 	// User management routes (authentication required)
@@ -250,7 +244,7 @@ func (e *Engine) listEntities(entityName string, entity *schema.Entity) gin.Hand
 		// Parse query parameters for filtering, pagination, sorting
 		filters := make(map[string]interface{})
 		for key, values := range c.Request.URL.Query() {
-			if len(values) > 0 && key != "limit" && key != "offset" && key != "order_by" {
+			if len(values) > 0 && key != "limit" && key != "offset" && key != "page" && key != "order_by" {
 				filters[key] = values[0]
 			}
 		}
@@ -258,6 +252,8 @@ func (e *Engine) listEntities(entityName string, entity *schema.Entity) gin.Hand
 		// Parse pagination parameters
 		limit := 50 // default limit
 		offset := 0
+		page := 1   // default page
+		
 		if limitStr := c.Query("limit"); limitStr != "" {
 			if parsedLimit, err := fmt.Sscanf(limitStr, "%d", &limit); err == nil && parsedLimit == 1 {
 				if limit > 1000 {
@@ -265,15 +261,32 @@ func (e *Engine) listEntities(entityName string, entity *schema.Entity) gin.Hand
 				}
 			}
 		}
+		
+		// Handle both offset and page parameters
 		if offsetStr := c.Query("offset"); offsetStr != "" {
 			fmt.Sscanf(offsetStr, "%d", &offset)
+		} else if pageStr := c.Query("page"); pageStr != "" {
+			if parsedPage, err := fmt.Sscanf(pageStr, "%d", &page); err == nil && parsedPage == 1 {
+				if page < 1 {
+					page = 1
+				}
+				offset = (page - 1) * limit
+			}
 		}
 		
 		orderBy := c.Query("order_by")
 		
 		// Query entities using database operations
-		results, err := e.dbOps.QueryEntities(entityName, entity, filters, limit, offset, orderBy)
+		// For tenant listing, bypass tenant isolation to show all tenants
+		var results []map[string]interface{}
+		var err error
+		if entityName == "tenants" {
+			results, err = e.dbOps.QueryAllEntities(entityName, entity, filters, limit, offset, orderBy)
+		} else {
+			results, err = e.dbOps.QueryEntities(entityName, entity, filters, limit, offset, orderBy)
+		}
 		if err != nil {
+			log.Printf("Database query failed for %s: %v", entityName, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Database query failed"})
 			return
 		}
@@ -298,15 +311,20 @@ func (e *Engine) createEntity(entityName string, entity *schema.Entity) gin.Hand
 	return func(c *gin.Context) {
 		var data map[string]interface{}
 		if err := c.ShouldBindJSON(&data); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+			log.Printf("Failed to bind JSON for %s entity: %v", entityName, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON", "details": err.Error()})
 			return
 		}
 		
-		// Add tenant_id to data
-		data["tenant_id"] = e.tenantID
+		// Add tenant_id to data (except for tenant creation)
+		if entityName != "tenants" {
+			data["tenant_id"] = e.tenantID
+		}
 		
 		// Validate data against schema
 		if err := e.dbOps.ValidateEntityData(entity, data); err != nil {
+			log.Printf("Validation failed for %s entity: %v", entityName, err)
+			log.Printf("Invalid data: %+v", data)
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
@@ -326,7 +344,12 @@ func (e *Engine) createEntity(entityName string, entity *schema.Entity) gin.Hand
 		// Insert into database
 		result, err := e.dbOps.InsertEntity(entityName, entity, data)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create entity"})
+			log.Printf("Failed to create %s entity: %v", entityName, err)
+			log.Printf("Data being inserted: %+v", data)
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error": "Failed to create entity",
+				"details": err.Error(),
+			})
 			return
 		}
 		

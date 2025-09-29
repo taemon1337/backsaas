@@ -172,10 +172,9 @@ func (d *DatabaseOperations) InsertEntity(entityName string, entity *schema.Enti
 	// Add tenant_id only if not already provided and not defined in schema
 	if _, exists := insertData["tenant_id"]; !exists {
 		insertData["tenant_id"] = d.tenantID
-	} else {
-		// If tenant_id is provided, ensure it matches the current tenant for security
-		insertData["tenant_id"] = d.tenantID
 	}
+	// Note: For tenant creation, we allow the provided tenant_id to be used
+	// The security check is handled at the API layer
 	
 	// Generate ID if not provided
 	if insertData[entity.Key] == nil {
@@ -345,6 +344,55 @@ func (d *DatabaseOperations) QueryEntities(entityName string, entity *schema.Ent
 	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query entities: %w", err)
+	}
+	defer rows.Close()
+	
+	// Convert rows to maps
+	results, err := d.rowsToMaps(rows, entity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to process query results: %w", err)
+	}
+	
+	return results, nil
+}
+
+// QueryAllEntities retrieves entities without tenant filtering (for admin operations)
+func (d *DatabaseOperations) QueryAllEntities(entityName string, entity *schema.Entity, filters map[string]interface{}, limit, offset int, orderBy string) ([]map[string]interface{}, error) {
+	// Build base query without tenant filtering
+	query := fmt.Sprintf("SELECT * FROM %s WHERE 1=1", entityName)
+	args := []interface{}{}
+	argIndex := 1
+	
+	// Add filters
+	for key, value := range filters {
+		query += fmt.Sprintf(" AND %s = $%d", key, argIndex)
+		args = append(args, value)
+		argIndex++
+	}
+	
+	// Add ordering
+	if orderBy != "" {
+		query += fmt.Sprintf(" ORDER BY %s", orderBy)
+	} else {
+		query += " ORDER BY created_at DESC"
+	}
+	
+	// Add pagination
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT $%d", argIndex)
+		args = append(args, limit)
+		argIndex++
+	}
+	
+	if offset > 0 {
+		query += fmt.Sprintf(" OFFSET $%d", argIndex)
+		args = append(args, offset)
+	}
+	
+	// Execute query
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query all entities: %w", err)
 	}
 	defer rows.Close()
 	
